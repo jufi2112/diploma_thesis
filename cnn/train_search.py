@@ -35,7 +35,7 @@ def main(args):
     if args.run.s3_bucket is not None:
         aws_utils.download_from_s3(log, args.run.s3_bucket, log)
 
-        train_utils.copy_code_to_experiment_dir("/code/nas-theory/cnn", save_dir)
+        train_utils.copy_code_to_experiment_dir("/home/julienf/git/gaea_release/cnn", save_dir)
         aws_utils.upload_directory(
             os.path.join(save_dir, "scripts"), args.run.s3_bucket
         )

@@ -18,7 +18,7 @@ train:
 
 hydra:
     run:
-        dir: /data/search-${search.search_space}-${search.method}-${run.dataset}-${run.seed}
+        dir: /home/julienf/data/search-${search.search_space}-${search.method}-${run.dataset}-${run.seed}
     
     
 

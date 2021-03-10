@@ -4,7 +4,7 @@ defaults:
 run:
     s3_bucket: null
     seed: ???
-    data: /data
+    data: /home/julienf/data
     dataset: cifar10 
     epochs: 600
     scheduler_epochs: ${run.epochs}
@@ -17,6 +17,6 @@ search:
 
 hydra:
     run:
-        dir: /data/eval-space-darts-${train.arch}-${run.dataset}-${run.seed}
+        dir: /home/julienf/data/eval-space-darts-${train.arch}-${run.dataset}-${run.seed}
 
 
