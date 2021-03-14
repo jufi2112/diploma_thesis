@@ -50,8 +50,10 @@ def main(args):
     logging.info("gpu device = %d" % args.run.gpu)
     logging.info("args = %s", args.pretty())
 
+    # Set random seeds for random, numpy, torch and cuda
     rng_seed = train_utils.RNGSeed(args.run.seed)
 
+    # Load respective architect
     if args.search.method in ["edarts", "gdarts", "eedarts"]:
         if args.search.fix_alphas:
             from architect.architect_edarts_edge_only import (
@@ -66,6 +68,7 @@ def main(args):
     else:
         raise NotImplementedError
 
+    # Load respective search spaces
     if args.search.search_space in ["darts", "darts_small"]:
         from search_spaces.darts.model_search import DARTSNetwork as Network
     elif "nas-bench-201" in args.search.search_space:

@@ -5,6 +5,8 @@ import torch.nn as nn
 
 
 class SuperNetwork(nn.Module):
+    """
+    """
     def __init__(self, C, num_classes, nodes, layers, criterion):
         super(SuperNetwork, self).__init__()
         self._C = C

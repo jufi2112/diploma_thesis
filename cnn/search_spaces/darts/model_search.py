@@ -13,40 +13,81 @@ def set_grad(module, input_grad, output_grad):
 
 
 class MixedOp(nn.Module):
-    def __init__(self, C, stride, op_names):
+    """Module that represents a mixture of different operations.
+
+    Args:
+        channels (int): Number of channels for the layers. Gets utilized as
+            number of input channels as well as number of output channels.
+        stride (int or tuple of int): Stride values for the layers.
+        op_names (list of str): Names of the operations that should get
+            mixed. See operations.py for a list of available operations. 
+    """
+    def __init__(self, channels, stride, op_names):
         super(MixedOp, self).__init__()
         self._ops = nn.ModuleList()
         for primitive in op_names:
-            op = OPS[primitive](C, stride, False)
-            if "pool" in primitive:
-                op = nn.Sequential(op, nn.BatchNorm2d(C, affine=False))
+            op = OPS[primitive](channels, stride, False)
+            if "pool" in primitive: # checks if substring "pool" in primitive
+                op = nn.Sequential(op, nn.BatchNorm2d(channels, affine=False))
             self._ops.append(op)
 
     def drop_path_op(self, op, x, drop_path_prob):
+        """With a certain probability, sets the result of applying the operation
+        to x to zero.
+
+        Args:
+            op: The operation that should be applied to x
+            x (torch.cuda.Tensor): The input to the operation op
+            drop_path_prob (float): Probability with which each element along
+                the first dimension of op(x) should be set to 0.
+
+        Returns:
+            The result of op(x), where each element along the first dimension is,
+                with a probability of drop_path_prob, set to 0.  
+        """
         if not isinstance(op, Identity):
             return drop_path(op(x), drop_path_prob)
         return op(x)
 
     def forward(self, x, weights, drop_path_prob=0, discrete=False):
+        """Returns the sum of weighted operations on x.
+
+        Args:
+            x: Input
+            weights (list of float): A weighting factor for each operation.
+            drop_path_prob (float): Probability for path dropping. Unused.
+            discrete (bool): Unused. 
+        """
         # ind = torch.nonzero(weights)
         # if discrete:
         #    assert len(ind) == 1
         # if len(ind) == 1:
         #    return self.drop_path_op(self._ops[ind[0][0]], x, drop_path_prob)
+        # apply each operation to x
         self._fs = [op(x) for op in self._ops]
         # print(weights)
+        # sum the weighted operations
         return sum(w * op for w, op in zip(weights, self._fs) if w > 0)
 
 
 class AuxiliaryHead(nn.Module):
-    def __init__(self, C, num_classes):
+    """Represents the 'end point' of the network, that is, the 
+    output / classification stage.
+
+    Args:
+        channels (int): Number of input channels for the first convolutional
+            operation. Has to be the same as the number of output channels of
+            the last operation.
+        num_classes (int): Number of classes that should be predicted.
+    """
+    def __init__(self, channels, num_classes):
         """assuming input size 8x8"""
         super(AuxiliaryHead, self).__init__()
         self.features = nn.Sequential(
             nn.ReLU(inplace=True),
             # image size = 2 x 2
             nn.AvgPool2d(5, stride=3, padding=0, count_include_pad=False),
-            nn.Conv2d(C, 128, 1, bias=False),
+            nn.Conv2d(channels, 128, 1, bias=False),
             nn.BatchNorm2d(128),
             nn.ReLU(inplace=True),
             nn.Conv2d(128, 768, 2, bias=False),
@@ -62,17 +103,22 @@ class AuxiliaryHead(nn.Module):
 
 
 class Cell(nn.Module):
-    def __init__(
-        self,
-        steps,
-        multiplier,
-        C_prev_prev,
-        C_prev,
-        C,
-        reduction,
-        reduction_prev,
-        op_names,
-    ):
+    """Class that represents a single cell inside the super network.
+
+    Args:
+        steps ():
+        multiplier ():
+        C_prev_prev ():
+        C_prev ():
+        C ():
+        reduction (bool): Whether the cell is a reduction cell or not.
+        reduction_prev ():
+        op_names (list of str): Names of the operations that should be
+            considered. See operations.py for a list of all possible operations
+            and genotypes.py for lists of predefined operations.
+    """
+    def __init__(self, steps, multiplier, C_prev_prev, C_prev, C,
+                 reduction, reduction_prev, op_names):
         super(Cell, self).__init__()
         self.reduction = reduction
 

@@ -109,12 +109,28 @@ def count_parameters_in_MB(model):
 
 
 def drop_path(x, drop_prob):
+    """For every element along the first dimension of x, returns either the
+    original element or 0, according to drop_prob.
+
+    Args:
+        x (torch.cuda.Tensor): Torch cuda tensor where elements along the first
+            dimension should be zeroed.
+        drop_prob (float): The probability with which elements along the first
+            dimension of x should be zeroed. A value of 0 means that x is
+            returned unmodified, whereas a value of 1 zeroes all elements.
+
+    Returns:
+        torch.cuda.Tensor: A tensor of the same shape as the input, with elements
+            of either the original ones or 0.
+    """
     if drop_prob > 0.0:
         keep_prob = 1.0 - drop_prob
         mask = Variable(
             torch.cuda.FloatTensor(x.size(0), 1, 1, 1).bernoulli_(keep_prob)
         )
-        x.div_(keep_prob)
+        # mask contains for every element inside the batch a float of either
+        # 0 or 1 
+        x.div_(keep_prob) # so that mul will result in the original value
         x.mul_(mask)
     return x
 
