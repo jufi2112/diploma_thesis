@@ -132,11 +132,11 @@ def main(args):
     best_valid = 0
     for epoch in range(start_epochs, args.run.epochs):
         lr = scheduler.get_lr()[0]
-        logging.info("epoch %d lr %e", epoch, lr)
+        logging.info(f"| Epoch: {epoch} / {args.run.epochs} | lr: {lr} |")
 
         model.drop_path_prob = args.train.drop_path_prob * epoch / args.run.epochs
 
-        # training
+        # training returns top1 and loss
         train_acc, train_obj = train(
             args, train_queue, valid_queue, model, architect, criterion, optimizer, lr,
         )
@@ -147,7 +147,7 @@ def main(args):
         if "update_lr_state" in dir(scheduler):
             scheduler.update_lr_state(train_obj)
 
-        logging.info("train_acc %f", train_acc)
+        logging.info(f"| train_acc: {train_acc} |")
 
         # History tracking
         for vs in [("alphas", architect.alphas), ("edges", architect.edges)]:
@@ -171,7 +171,7 @@ def main(args):
             if valid_acc > best_valid:
                 best_valid = valid_acc
                 best_genotype = architect.genotype()
-            logging.info("valid_acc %f", valid_acc)
+            logging.info(f"| valid_acc: {valid_acc} |")
 
         train_utils.save(
             save_dir,
@@ -186,6 +186,7 @@ def main(args):
 
         scheduler.step()
 
+    logging.info("Training finished. Performing validation...")
     valid_acc, valid_obj = train_utils.infer(
         valid_queue,
         model,
@@ -196,7 +197,7 @@ def main(args):
     if valid_acc > best_valid:
         best_valid = valid_acc
         best_genotype = architect.genotype()
-    logging.info("valid_acc %f", valid_acc)
+    logging.info(f"| valid_acc: {valid_acc} |")
 
     if args.run.s3_bucket is not None:
         filename = "cnn_genotypes.txt"
@@ -292,7 +293,7 @@ def train(
         top5.update(prec5.item(), n)
 
         if step % args.run.report_freq == 0:
-            logging.info("train %03d %e %f %f", step, objs.avg, top1.avg, top5.avg)
+            logging.info(f"| Train | Batch: {step:3d} | Loss: {objs.avg:e} | Top1: {top1.avg} | Top5: {top5.avg} |")
 
     return top1.avg, objs.avg
 

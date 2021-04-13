@@ -494,7 +494,7 @@ def infer(valid_queue, model, criterion, report_freq=50, discrete=False):
             top5.update(prec5.item(), n)
 
             if step % report_freq == 0:
-                logging.info("valid %03d %e %f %f", step, objs.avg, top1.avg, top5.avg)
+                logging.info(f"| Validation | Batch {step:3d} | Loss: {objs.avg:e} | Top1: {top1.avg} | Top5: {top5.avg} |")
     # if arch is not None:
     #    model.alphas_normal.data.copy_(normal_orig)
     #    model.alphas_reduce.data.copy_(reduce_orig)
