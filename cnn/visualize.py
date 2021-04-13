@@ -1,5 +1,5 @@
 import sys
-import genotypes
+import genotypes_to_visualize
 from graphviz import Digraph
 
 
@@ -55,7 +55,7 @@ if __name__ == "__main__":
 
     genotype_name = sys.argv[1]
     try:
-        genotype = eval("genotypes.{}".format(genotype_name))
+        genotype = eval(f"genotypes_to_visualize.{genotype_name}")
     except AttributeError:
         print("{} is not specified in genotypes.py".format(genotype_name))
         sys.exit(1)
