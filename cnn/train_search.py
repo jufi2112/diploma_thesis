@@ -132,7 +132,7 @@ def main(args):
     best_valid = 0
     for epoch in range(start_epochs, args.run.epochs):
         lr = scheduler.get_lr()[0]
-        logging.info(f"| Epoch: {epoch} / {args.run.epochs} | lr: {lr} |")
+        logging.info(f"| Epoch: {epoch+1} / {args.run.epochs} | lr: {lr} |")
 
         model.drop_path_prob = args.train.drop_path_prob * epoch / args.run.epochs
 
