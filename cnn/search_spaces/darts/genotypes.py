@@ -47,6 +47,13 @@ SMALL_NOZERO = [
     "sep_conv_3x3",
 ]
 
+# each genotype consists of normal cell and reduce cell
+# normal:   contains (in ascending order) for every intermediate node n entries (n=number of input connections that each node can have)
+#           every entry is composed of (edge operation name, source node of the directed edge)
+# normal_concat:    contains the nodes who's feature maps are combined to form the output
+# reduce:   same as normal, but for reduction cell
+# reduce_concat: same as normal_concat, but for reduction cell
+
 NASNet = Genotype(
     normal=[
         ("sep_conv_5x5", 1),
