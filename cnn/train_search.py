@@ -22,8 +22,12 @@ from torch.utils.tensorboard import SummaryWriter
 
 @hydra.main(config_path="../configs/cnn/config.yaml", strict=False)
 def main(args):
-    print(args)
-    sys.exit(1)
+    """Performs NAS.
+    
+    Returns:
+        str: Path to the json file where the genotype of the selected architecture was dumped to.
+
+    """
     np.set_printoptions(precision=3)
     save_dir = os.getcwd()
 
@@ -212,6 +216,8 @@ def main(args):
     with open(args.run.genotype_path, 'w') as genotype_file:
         json.dump(genotype_dict, genotype_file, indent=4)
 
+    logging.info(f"Search finished. Dumped best genotype into {args.run.genotype_path}")
+
     if args.run.s3_bucket is not None:
         filename = "cnn_genotypes.txt"
         aws_utils.download_from_s3(filename, args.run.s3_bucket, filename)
@@ -229,6 +235,8 @@ def main(args):
             )
         aws_utils.upload_to_s3(filename, args.run.s3_bucket, filename)
         aws_utils.upload_to_s3(log, args.run.s3_bucket, log)
+
+    return args.run.genotype_path
 
 
 def train(
