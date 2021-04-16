@@ -8,12 +8,46 @@ from .expgrad_lr import AdaptiveLR
 
 
 def normalize(x, dim, min_v=1e-5):
+    """Normalizes the tensor along the given dimension.
+
+    Args:
+        x (torch.Tensor): The tensor which should get minimized.
+        dim (int): Dimension along which the sum for normalization should be calculated
+        min_v (float): Minimum value elements inside the tensor can become, used to avoid division by zero 
+
+    Returns:
+        torch.Tensor: Normalized tensor with the same shape as the input.
+    """
     x = torch.clamp(x, min=min_v)
     normed = x / x.sum(dim=dim, keepdim=True)
     return normed
 
 
 class ArchitectEDARTS(Architect):
+    """Architect for exponentiated DARTS (EDARTS). 
+    Responsible for performing architecture updates.
+
+    Args:
+        model (Network): The current model of the network
+        args: Arguments for the architect
+        writer: Summary writer
+
+    Attributes:
+        learn_edges (bool): Whether edges should be learned. Set to false for EDARTS.
+            If you want to learn edges, utilize EEDARTS
+        trace_norm: @see https://www.quantiki.org/wiki/trace-norm
+        lr (float): Learning rate for architecture updates
+        edge_lr (float): Learning rate for edge updates.
+        history (History): History object of architecture learning.
+        grad_clip: If not None, used as max_norm argument for 
+            @see https://pytorch.org/docs/stable/generated/torch.nn.utils.clip_grad_norm_.html
+        adapt_lr (bool): Whether the learning rate should be adapted during the process.
+            Config defaults to False.
+        adaptive_lr: Deprecated.
+        weight_decay (float): Weight decay for the backwards step. Config defaults to 0.0
+        gd (bool): True if gradient descend should be utilized, False for exponentiated gradient updates.
+            Config defaults to False.
+    """
     def __init__(self, model, args, writer):
         self.learn_edges = args.search.learn_edges
         self.trace_norm = args.search.trace_norm

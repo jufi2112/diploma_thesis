@@ -1,0 +1,26 @@
+defaults:
+    - mode: eval
+
+run:
+    s3_bucket: null
+    seed: ???
+    data: /home/julienf/data
+    dataset: cifar10 
+    epochs: 600
+    scheduler_epochs: ${run.epochs}
+    n_threads_data: 0
+    report_freq: 50
+    gpu: 0
+    # path to json file that contains genotype
+    genotype_path: ???
+    # identifier for the genotype
+    genotype_id: ???
+
+search:
+    search_space: darts
+
+hydra:
+    run:
+        dir: /home/julienf/data/final_training-space-darts-${run.genotype_id}-${run.dataset}-${run.seed}
+
+

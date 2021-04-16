@@ -298,24 +298,30 @@ class DARTSNetwork(SuperNetwork):
         return logits, logits_aux
 
     def _parse(self, weights):
+        # see issue: https://github.com/quark0/darts/issues/68 on why n += 1 later on
         gene = []
         n = 2
         start = 0
         for i in range(self._nodes):
             end = start + n
             W = weights[start:end].copy()
+            # W[x][k] contains weights for operation k at edge x
             edges = sorted(
                 range(i + 2),
+                # x -> edge identifier, k -> operation
                 key=lambda x: -max(
                     W[x][k] for k in range(len(W[x])) if self.op_names[k] != "none"
                 ),
-            )[:2]
+            )[:2]   # -> gets the 2 edges that contain the highest weight
+            # for each edge, find operation with highest weight
             for j in edges:
                 k_best = None
                 for k in range(len(W[j])):
                     if self.op_names[k] != "none":
                         if k_best is None or W[j][k] > W[j][k_best]:
                             k_best = k
+                # k_best is operation with highest weight
+                # 
                 gene.append((self.op_names[k_best], j))
             start = end
             n += 1

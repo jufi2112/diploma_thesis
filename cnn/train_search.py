@@ -14,6 +14,7 @@ import pickle
 import torch.nn as nn
 import torch.utils
 import torch.nn.functional as F
+import json
 
 from torch.autograd import Variable
 from torch.utils.tensorboard import SummaryWriter
@@ -21,6 +22,8 @@ from torch.utils.tensorboard import SummaryWriter
 
 @hydra.main(config_path="../configs/cnn/config.yaml", strict=False)
 def main(args):
+    print(args)
+    sys.exit(1)
     np.set_printoptions(precision=3)
     save_dir = os.getcwd()
 
@@ -198,6 +201,16 @@ def main(args):
         best_valid = valid_acc
         best_genotype = architect.genotype()
     logging.info(f"| valid_acc: {valid_acc} |")
+
+    # dump best genotype to json file, so that we can load it during evaluation phase (in train_final.py)
+    genotype_dict = best_genotype._asdict()
+    for key, val in genotype_dict.items():
+        if type(val) == range:
+            genotype_dict[key] = [node for node in val]
+    if os.path.splitext(args.run.genotype_path)[1] != '.json':
+        args.run.genotype_path += '.json'
+    with open(args.run.genotype_path, 'w') as genotype_file:
+        json.dump(genotype_dict, genotype_file, indent=4)
 
     if args.run.s3_bucket is not None:
         filename = "cnn_genotypes.txt"

@@ -8,9 +8,9 @@ train:
     momentum: 0.9
     weight_decay: 0.0003
     init_channels: 16
-    layers: 8
+    layers: 8   # number of cells the final network should be composed of
     cutout: false
-    auxiliary: false 
+    auxiliary: false # @see https://stats.stackexchange.com/questions/304699/what-is-auxiliary-loss-as-mentioned-in-pspnet-paper
     auxiliary_weight: 0.4
     drop_path_prob: 0
     grad_clip: 5

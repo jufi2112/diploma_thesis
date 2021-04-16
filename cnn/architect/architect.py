@@ -3,7 +3,22 @@ import torch
 
 
 class Architect(ABC):
-    """Base class for architecture optimizers."""
+    """Base class for architecture optimizers.
+    
+    Args:
+        model (Network): The current model of the network
+        args: Arguments for the architect
+        writer: Summary writer
+
+    Attributes:
+        model (Network): The network model
+        writer: The file writer
+        cell_types (list of str): Types of cells that should be searched
+        args: Arguments for the architect
+        op_names (list of str): List containing the available operation names.
+        n_nodes (int): 
+    
+    """
 
     def __init__(self, model, args, writer):
         self.model = model

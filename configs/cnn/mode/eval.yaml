@@ -1,5 +1,5 @@
 train:
-    arch: ???
+    arch: ???   # not used in train_final.py
     scheduler: cosine
     lr_anneal_cycles: 1
     smooth_cross_entropy: false
@@ -9,12 +9,13 @@ train:
     momentum: 0.9
     weight_decay: 0.0003
     init_channels: 36
-    layers: 20
+    layers: 20 # number of cells the final network should be composed of
     cutout: true
     cutout_length: 16
-    auxiliary: true
+    auxiliary: true # @see https://stats.stackexchange.com/questions/304699/what-is-auxiliary-loss-as-mentioned-in-pspnet-paper
     auxiliary_weight: 0.4
     drop_path_prob: 0.2
     grad_clip: 5
+
 
 
