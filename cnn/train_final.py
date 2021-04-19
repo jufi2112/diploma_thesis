@@ -98,7 +98,7 @@ def main(args):
     train_start_time = timer()
 
     for epoch in range(start_epochs, args.run.epochs):
-        logging.info(f"| Epoch: {epoch+1:4d}/{args.run.epochs} | lr: {scheduler.get_lr()[0]} |")
+        logging.info(f"\n| Epoch: {epoch+1:4d}/{args.run.epochs} | lr: {scheduler.get_lr()[0]} |")
         model.drop_path_prob = args.train.drop_path_prob * epoch / args.run.epochs
 
         train_acc, train_obj = train(args, train_queue, model, criterion, optimizer)
@@ -146,7 +146,7 @@ def train(args, train_queue, model, criterion, optimizer):
         top5.update(prec5.item(), batch_size)
 
         if step % args.run.report_freq == 0:
-            logging.info(f"| Batch: {step:3d} | Loss: {objs.avg} | Top1: {top1.avg} | Top5: {top5.avg} |")
+            logging.info(f"| Batch: {step:3d} | Loss: {objs.avg:5f} | Top1: {top1.avg:3f} | Top5: {top5.avg:3f} |")
         
     return top1.avg, objs.avg
 
