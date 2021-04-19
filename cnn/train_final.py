@@ -14,6 +14,8 @@ import train_utils
 import logging
 import argparse
 import json
+from timeit import default_timer as timer
+from datetime import timedelta
 
 import hydra
 import torch.nn as nn
@@ -93,6 +95,8 @@ def main(args):
         args, eval_split=True
     )
 
+    train_start_time = timer()
+
     for epoch in range(start_epochs, args.run.epochs):
         logging.info(f"| Epoch: {epoch+1:4d}/{args.run.epochs} | lr: {scheduler.get_lr()[0]} |")
         model.drop_path_prob = args.train.drop_path_prob * epoch / args.run.epochs
@@ -109,6 +113,9 @@ def main(args):
             os.getcwd(), epoch+1, rng_seed, model, optimizer, s3_bucket=None
         )
         scheduler.step()
+
+    train_end_time = timer()
+    logging.info(f"\nTraining finished after {timedelta(seconds=(train_end_time - train_start_time))} (hh:mm:ss).")
 
 
 def train(args, train_queue, model, criterion, optimizer):

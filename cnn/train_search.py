@@ -19,6 +19,9 @@ import json
 from torch.autograd import Variable
 from torch.utils.tensorboard import SummaryWriter
 
+from timeit import default_timer as timer
+from datetime import timedelta
+
 
 @hydra.main(config_path="../configs/cnn/config.yaml", strict=False)
 def main(args):
@@ -132,9 +135,12 @@ def main(args):
             train_queue,
             valid_queue,
         ) = train_utils.create_data_queues(args)
+        logging.info('Resumed training from a previous checkpoint. Runtime measurement will be wrong.')
+        train_start_time = 0
     except Exception as e:
         logging.info(e)
         start_epochs = 0
+        train_start_time = timer()
 
     best_valid = 0
     for epoch in range(start_epochs, args.run.epochs):
@@ -193,7 +199,8 @@ def main(args):
 
         scheduler.step()
 
-    logging.info("Training finished. Performing validation...")
+    train_end_time = timer()
+    logging.info(f"Training finished after {timedelta(seconds=(train_end_time - train_start_time))}(hh:mm:ss). Performing validation of latest epoch...")
     valid_acc, valid_obj = train_utils.infer(
         valid_queue,
         model,
@@ -236,7 +243,7 @@ def main(args):
         aws_utils.upload_to_s3(filename, args.run.s3_bucket, filename)
         aws_utils.upload_to_s3(log, args.run.s3_bucket, log)
 
-    return args.run.genotype_path
+    #return args.run.genotype_path
 
 
 def train(
