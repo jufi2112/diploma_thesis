@@ -41,6 +41,11 @@ def main(args):
     torch.cuda.set_device(args.run.gpu)
     logging.info(f"Training hyperparameters: TODO: print arguments for training")
     logging.info(f"    GPU device: {args.run.gpu}")
+    logging.info(f"    Number of cells to stack: {args.train.layers}")
+    logging.info(f"    Initial number of channels per cell: {args.train.init_channels}")
+    logging.info(f"    Training epochs: {args.run.epochs}")
+    logging.info(f"    Batch size: {args.train.batch_size}")
+    logging.info(f"    Loss function: Cross entropy loss")
 
     criterion = nn.CrossEntropyLoss()
     criterion = criterion.cuda()
