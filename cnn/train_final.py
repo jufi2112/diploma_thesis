@@ -14,13 +14,18 @@ import train_utils
 import logging
 import argparse
 import json
+import io
 from timeit import default_timer as timer
 from datetime import timedelta
 
+import visualize
+
+import PIL
 import hydra
 import torch.nn as nn
 import torch.utils
 import torch.backends.cudnn as cudnn
+from torch.utils.tensorboard import SummaryWriter
 
 from torch.autograd import Variable
 from search_spaces.darts.model import NetworkCIFAR as Network
@@ -32,6 +37,13 @@ def main(args):
 
     log = os.path.join(os.getcwd(), 'log_architecture_evaluation.txt')
     train_utils.set_up_logging(log)
+
+    # Tensorboard SummaryWriter setup
+    save_dir = os.getcwd()
+    tensorboard_dir = os.path.join(save_dir, 'tensorboard')
+    if not os.path.exists(tensorboard_dir):
+        os.mkdir(tensorboard_dir)
+    writer = SummaryWriter(tensorboard_dir)
 
     CIFAR_CLASSES = 10
 
@@ -64,6 +76,26 @@ def main(args):
         reduce_concat=genotype_dict['reduce_concat']
     )
 
+    # visualize genotype
+    genotype_graph_normal = visualize.plot(genotype.normal, "", return_type="graph", output_format="png")
+    binary_normal = genotype_graph_normal.pipe()
+    stream_normal = io.BytesIO(binary_normal)
+    graph_normal = np.array(PIL.Image.open(stream_normal).convert("RGB"))
+    writer.add_image("Normal_Cell", graph_normal, dataformats="HWC")
+    genotype_graph_reduce = visualize.plot(genotype.reduce, "", return_type="graph", output_format="png")
+    binary_reduce = genotype_graph_reduce.pipe()
+    stream_reduce = io.BytesIO(binary_reduce)
+    graph_reduce = np.array(PIL.Image.open(stream_reduce).convert("RGB"))
+    writer.add_image("Reduce_Cell", graph_reduce, dataformats="HWC")
+    del genotype_graph_normal
+    del binary_normal
+    del stream_normal
+    del graph_normal
+    del genotype_graph_reduce
+    del binary_reduce
+    del stream_reduce
+    del graph_reduce
+
     logging.info(f"Evaluation phase started for genotype: \n{genotype}")
 
     model = Network(
@@ -81,33 +113,43 @@ def main(args):
     total_params = sum(x.data.nelement() for x in model.parameters())
     logging.info(f"Total parameters of model: {total_params}")
 
+    num_train, num_classes, train_queue, valid_queue = train_utils.create_data_queues(
+        args, eval_split=True
+    )
+
     # check if we already trained
     try:
         start_epochs, _ = train_utils.load(
             os.getcwd(), rng_seed, model, optimizer, s3_bucket=None
         )
         scheduler.last_epoch = start_epochs - 1
+        logging.info("Resumed training from a previous checkpoint. Runtime measurement will be wrong.")
+        train_start_time = 0
     except Exception as e:
         print(e)
         start_epochs = 0
-
-    num_train, num_classes, train_queue, valid_queue = train_utils.create_data_queues(
-        args, eval_split=True
-    )
-
-    train_start_time = timer()
+        train_start_time = timer()
 
     for epoch in range(start_epochs, args.run.epochs):
-        logging.info(f"\n| Epoch: {epoch+1:4d}/{args.run.epochs} | lr: {scheduler.get_lr()[0]} |")
+        logging.info(f"\n| Epoch: {epoch:4d}/{args.run.epochs} | lr: {scheduler.get_lr()[0]} |")
         model.drop_path_prob = args.train.drop_path_prob * epoch / args.run.epochs
 
-        train_acc, train_obj = train(args, train_queue, model, criterion, optimizer)
+        train_acc, train_obj, train_top5 = train(args, train_queue, model, criterion, optimizer)
         logging.info(f"| train_acc: {train_acc} |")
 
         valid_acc, valid_obj, valid_top5 = train_utils.infer(
             valid_queue, model, criterion, report_freq=args.run.report_freq
         )
         logging.info(f"| valid_acc: {valid_acc} |")
+
+        # log values
+        writer.add_scalar("Loss/train", train_obj, epoch)
+        writer.add_scalar("Top1/train", train_acc, epoch)
+        writer.add_scalar("Top5/train", train_top5, epoch)
+        writer.add_scalar("lr", scheduler.get_lr()[0], epoch)
+        writer.add_scalar("Loss/valid", valid_obj, epoch)
+        writer.add_scalar("Top1/valid", valid_acc, epoch)
+        writer.add_scalar("Top5/valid", valid_top5, epoch)
 
         train_utils.save(
             os.getcwd(), epoch+1, rng_seed, model, optimizer, s3_bucket=None
@@ -148,7 +190,7 @@ def train(args, train_queue, model, criterion, optimizer):
         if step % args.run.report_freq == 0:
             logging.info(f"| Batch: {step:3d} | Loss: {objs.avg:5f} | Top1: {top1.avg:3f} | Top5: {top5.avg:3f} |")
         
-    return top1.avg, objs.avg
+    return top1.avg, objs.avg, top5.avg
 
 
 if __name__ == '__main__':

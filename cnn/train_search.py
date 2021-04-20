@@ -155,7 +155,7 @@ def main(args):
     overall_visualization_time = 0 # don't count visualization into runtime
     for epoch in range(start_epochs, args.run.epochs):
         lr = scheduler.get_lr()[0]
-        logging.info(f"\n| Epoch: {epoch} / {args.run.epochs} | lr: {lr} |")
+        logging.info(f"\n| Epoch: {epoch:3d} / {args.run.epochs} | lr: {lr} |")
 
         model.drop_path_prob = args.train.drop_path_prob * epoch / args.run.epochs
 
