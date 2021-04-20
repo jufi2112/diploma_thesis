@@ -123,7 +123,10 @@ def main(args):
     )
     model = model.cuda()
     logging.info("param size = %fMB", train_utils.count_parameters_in_MB(model))
-    own_writer.add_graph(model)
+
+    if args.run.dataset == 'cifar10':
+        random_img = np.random.randint(0, 255, size=(3, 32, 32))
+        own_writer.add_graph(model, input_to_model=random_img)
 
     optimizer, scheduler = train_utils.setup_optimizer(model, args)
 
