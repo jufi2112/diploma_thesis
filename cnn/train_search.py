@@ -126,7 +126,7 @@ def main(args):
 
     if args.run.dataset == 'cifar10':
         random_img = np.random.randint(0, 255, size=(3, 32, 32))
-        own_writer.add_graph(model, input_to_model=random_img)
+        own_writer.add_graph(model, input_to_model=torch.from_numpy(random_img))
 
     optimizer, scheduler = train_utils.setup_optimizer(model, args)
 
