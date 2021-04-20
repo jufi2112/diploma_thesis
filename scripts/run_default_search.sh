@@ -11,6 +11,7 @@ python /home/julienf/git/gaea_release/cnn/train_search.py \
 	run.seed=2222 \
 	run.epochs=50 \
 	run.dataset=cifar10 \
+	run.genotype_path="genotype.json" \
 	search.single_level=false \
 	search.exclude_zero=false &> /home/julienf/log_5.txt
 # Logging is already done into ~/data/<search_config>/log.txt but better safe than sorry :D
