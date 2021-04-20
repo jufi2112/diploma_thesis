@@ -155,7 +155,7 @@ def main(args):
     overall_visualization_time = 0 # don't count visualization into runtime
     for epoch in range(start_epochs, args.run.epochs):
         lr = scheduler.get_lr()[0]
-        logging.info(f"| Epoch: {epoch} / {args.run.epochs} | lr: {lr} |")
+        logging.info(f"\n| Epoch: {epoch} / {args.run.epochs} | lr: {lr} |")
 
         model.drop_path_prob = args.train.drop_path_prob * epoch / args.run.epochs
 
@@ -194,7 +194,7 @@ def main(args):
         genotype_graph_normal = visualize.plot(genotype.normal, "", return_type="graph", output_format='png')
         binary_normal = genotype_graph_normal.pipe()
         stream_normal = io.BytesIO(binary_normal)
-        graph_normal = np.array(Image.open(stream_normal).convert("RGB"))
+        graph_normal = np.array(PIL.Image.open(stream_normal).convert("RGB"))
         own_writer.add_image("Normal_Cell", graph_normal, epoch, dataformats="HWC")
         del genotype_graph_normal
         del binary_normal
@@ -204,7 +204,7 @@ def main(args):
         genotype_graph_reduce = visualize.plot(genotype.reduce, "", return_type="graph", output_format='png')
         binary_reduce = genotype_graph_reduce.pipe()
         stream_reduce = io.BytesIO(binary_reduce)
-        graph_reduce = np.array(Image.open(stream_reduce).convert("RGB"))
+        graph_reduce = np.array(PIL.Image.open(stream_reduce).convert("RGB"))
         own_writer.add_image("Reduce_Cell", graph_reduce, epoch, dataformats="HWC")
         del genotype_graph_reduce
         del binary_reduce
