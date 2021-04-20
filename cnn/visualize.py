@@ -57,7 +57,7 @@ def plot(genotype, filename, output_format='pdf', return_type="render", view_ren
     return_type = return_type.lower()
     if return_type == 'source':
         return g.source
-    else if return_Type == 'graph':
+    elif return_type == 'graph':
         return g
     else: #if return_type == 'render'
         #default: render

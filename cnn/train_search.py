@@ -299,8 +299,6 @@ def main(args):
         aws_utils.upload_to_s3(filename, args.run.s3_bucket, filename)
         aws_utils.upload_to_s3(log, args.run.s3_bucket, log)
 
-    #return args.run.genotype_path
-
 
 def train(
     args,
