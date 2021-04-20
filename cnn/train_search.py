@@ -120,6 +120,7 @@ def main(args):
             "exclude_zero": args.search.exclude_zero,
             "track_running_stats": args.search.track_running_stats,
         }
+    )
 
     if args.run.dataset == 'cifar10':
         random_img = np.random.randint(0, 255, size=(1, 3, 32, 32))
