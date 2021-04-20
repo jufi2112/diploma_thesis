@@ -125,7 +125,7 @@ def main(args):
     logging.info("param size = %fMB", train_utils.count_parameters_in_MB(model))
 
     if args.run.dataset == 'cifar10':
-        random_img = np.random.randint(0, 255, size=(3, 32, 32))
+        random_img = np.random.randint(0, 255, size=(1, 3, 32, 32))
         own_writer.add_graph(model, input_to_model=torch.from_numpy(random_img))
 
     optimizer, scheduler = train_utils.setup_optimizer(model, args)
