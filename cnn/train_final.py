@@ -104,7 +104,7 @@ def main(args):
         train_acc, train_obj = train(args, train_queue, model, criterion, optimizer)
         logging.info(f"| train_acc: {train_acc} |")
 
-        valid_acc, valid_obj = train_utils.infer(
+        valid_acc, valid_obj, valid_top5 = train_utils.infer(
             valid_queue, model, criterion, report_freq=args.run.report_freq
         )
         logging.info(f"| valid_acc: {valid_acc} |")

@@ -15,9 +15,13 @@ import torch.nn as nn
 import torch.utils
 import torch.nn.functional as F
 import json
+import io
+import PIL
 
 from torch.autograd import Variable
 from torch.utils.tensorboard import SummaryWriter
+
+import visualize
 
 from timeit import default_timer as timer
 from datetime import timedelta
@@ -41,6 +45,9 @@ def main(args):
     if not os.path.exists(summary_dir):
         os.mkdir(summary_dir)
     writer = SummaryWriter(summary_dir)
+
+    # own writer that I use to keep track of interesting variables
+    own_writer = SummaryWriter(os.path.join(save_dir, 'tensorboard'))
 
     if args.run.s3_bucket is not None:
         aws_utils.download_from_s3(log, args.run.s3_bucket, log)
@@ -116,6 +123,7 @@ def main(args):
     )
     model = model.cuda()
     logging.info("param size = %fMB", train_utils.count_parameters_in_MB(model))
+    own_writer.add_graph(model)
 
     optimizer, scheduler = train_utils.setup_optimizer(model, args)
 
@@ -143,14 +151,16 @@ def main(args):
         train_start_time = timer()
 
     best_valid = 0
+    epoch_best_valid = 0
+    overall_visualization_time = 0 # don't count visualization into runtime
     for epoch in range(start_epochs, args.run.epochs):
         lr = scheduler.get_lr()[0]
-        logging.info(f"| Epoch: {epoch+1} / {args.run.epochs} | lr: {lr} |")
+        logging.info(f"| Epoch: {epoch} / {args.run.epochs} | lr: {lr} |")
 
         model.drop_path_prob = args.train.drop_path_prob * epoch / args.run.epochs
 
         # training returns top1 and loss
-        train_acc, train_obj = train(
+        train_acc, train_obj, train_top5 = train(
             args, train_queue, valid_queue, model, architect, criterion, optimizer, lr,
         )
         architect.baseline = train_obj
@@ -173,17 +183,52 @@ def main(args):
         genotype = architect.genotype()
         logging.info("genotype = %s", genotype)
 
+        # log epoch values to tensorboard
+        own_writer.add_scalar('Loss/train', train_obj, epoch)
+        own_writer.add_scalar('Top1/train', train_acc, epoch)
+        own_writer.add_scalar('Top5/train', train_top5, epoch)
+        own_writer.add_scalar('lr', lr, epoch)
+
+        # visualize Genotype
+        start_visualization = timer()
+        genotype_graph_normal = visualize.plot(genotype.normal, "", return_type="graph", output_format='png')
+        binary_normal = genotype_graph_normal.pipe()
+        stream_normal = io.BytesIO(binary_normal)
+        graph_normal = np.array(Image.open(stream_normal).convert("RGB"))
+        own_writer.add_image("Normal_Cell", graph_normal, epoch, dataformats="HWC")
+        del genotype_graph_normal
+        del binary_normal
+        del stream_normal
+        del graph_normal
+
+        genotype_graph_reduce = visualize.plot(genotype.reduce, "", return_type="graph", output_format='png')
+        binary_reduce = genotype_graph_reduce.pipe()
+        stream_reduce = io.BytesIO(binary_reduce)
+        graph_reduce = np.array(Image.open(stream_reduce).convert("RGB"))
+        own_writer.add_image("Reduce_Cell", graph_reduce, epoch, dataformats="HWC")
+        del genotype_graph_reduce
+        del binary_reduce
+        del stream_reduce
+        del graph_reduce
+        end_visualization = timer()
+        overall_visualization_time += (end_visualization - start_visualization)
+
         if not args.search.single_level:
-            valid_acc, valid_obj = train_utils.infer(
+            valid_acc, valid_obj, valid_top5 = train_utils.infer(
                 valid_queue,
                 model,
                 criterion,
                 report_freq=args.run.report_freq,
                 discrete=args.search.discrete,
             )
+            own_writer.add_scalar('Loss/valid', valid_obj, epoch)
+            own_writer.add_scalar('Top1/valid', valid_acc, epoch)
+            own_writer.add_scalar('Top5/valid', valid_top5, epoch)
+
             if valid_acc > best_valid:
                 best_valid = valid_acc
                 best_genotype = architect.genotype()
+                epoch_best_valid = epoch
             logging.info(f"| valid_acc: {valid_acc} |")
 
         train_utils.save(
@@ -200,18 +245,29 @@ def main(args):
         scheduler.step()
 
     train_end_time = timer()
-    logging.info(f"Training finished after {timedelta(seconds=(train_end_time - train_start_time))}(hh:mm:ss). Performing validation of latest epoch...")
-    valid_acc, valid_obj = train_utils.infer(
+    logging.info(f"Visualization of cells during search took a total of {timedelta(seconds=overall_visualization_time)} (hh:mm:ss).")
+    logging.info(f"This time is not included in the runtime given below.\n")
+    logging.info(f"Training finished after {timedelta(seconds=((train_end_time - train_start_time) - overall_visualization_time))}(hh:mm:ss). Performing validation of final epoch...")
+    valid_acc, valid_obj, valid_top5 = train_utils.infer(
         valid_queue,
         model,
         criterion,
         report_freq=args.run.report_freq,
         discrete=args.search.discrete,
     )
+
+    own_writer.add_scalar('Loss/valid', valid_obj, args.run.epochs-1)
+    own_writer.add_scalar('Top1/valid', valid_acc, args.run.epochs-1)
+    own_writer.add_scalar('Top5/valid', valid_top5, args.run.epochs-1)
+
     if valid_acc > best_valid:
         best_valid = valid_acc
         best_genotype = architect.genotype()
+        epoch_best_valid = args.run.epochs-1
     logging.info(f"| valid_acc: {valid_acc} |")
+
+    logging.info(f"\nOverall best found genotype with validation accuracy of {best_valid} (found in epoch {epoch_best_valid}):")
+    logging.info(f"{best_genotype}")
 
     # dump best genotype to json file, so that we can load it during evaluation phase (in train_final.py)
     genotype_dict = best_genotype._asdict()
@@ -323,7 +379,7 @@ def train(
         if step % args.run.report_freq == 0:
             logging.info(f"| Train | Batch: {step:3d} | Loss: {objs.avg:e} | Top1: {top1.avg} | Top5: {top5.avg} |")
 
-    return top1.avg, objs.avg
+    return top1.avg, objs.avg, top5.avg
 
 
 if __name__ == "__main__":

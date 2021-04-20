@@ -499,7 +499,7 @@ def infer(valid_queue, model, criterion, report_freq=50, discrete=False):
     #    model.alphas_normal.data.copy_(normal_orig)
     #    model.alphas_reduce.data.copy_(reduce_orig)
 
-    return top1.avg, objs.avg
+    return top1.avg, objs.avg, top5.avg
 
 
 def copy_code_to_experiment_dir(code, experiment_dir):
