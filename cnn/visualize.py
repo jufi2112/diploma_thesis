@@ -3,9 +3,18 @@ import genotypes_to_visualize
 from graphviz import Digraph
 
 
-def plot(genotype, filename):
+def plot(genotype, filename, output_format='pdf', return_type="render", view_render= True):
+    """
+    Args:
+        return_type (str): Defines how the created graph should be returned. Can be one of the following:
+            'render': Renders the graph    
+            'source': Returns the source
+            'graph': Returns the graph object
+        view_render (bool): When the graph should be rendered (see option above), should it also be displayed?
+
+    """
     g = Digraph(
-        format="pdf",
+        format=output_format,
         edge_attr=dict(fontsize="20", fontname="times"),
         node_attr=dict(
             style="filled",
@@ -45,7 +54,15 @@ def plot(genotype, filename):
     for i in range(steps):
         g.edge(str(i), "c_{k}", fillcolor="gray")
 
-    g.render(filename, view=True)
+    return_type = return_type.lower()
+    if return_type == 'source':
+        return g.source
+    else if return_Type == 'graph':
+        return g
+    else: #if return_type == 'render'
+        #default: render
+        g.render(filename, view=view_render)
+
 
 
 if __name__ == "__main__":
