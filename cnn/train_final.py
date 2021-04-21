@@ -60,6 +60,8 @@ def main(args):
     logging.info(f"    Training epochs: {args.run.epochs}")
     logging.info(f"    Batch size: {args.train.batch_size}")
     logging.info(f"    Loss function: Cross entropy loss")
+    logging.info(f"    Path to genotype: {args.run.genotype_path}")
+    logging.info(f"    Genotype id: {args.run.genotype_id}")
 
     criterion = nn.CrossEntropyLoss()
     criterion = criterion.cuda()
