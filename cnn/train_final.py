@@ -107,6 +107,9 @@ def main(args):
     )
     model = model.cuda()
 
+    random_img = np.random.randint(0, 255, size=(1, 3, 32, 32))
+    writer.add_graph(model, input_to_model=torch.from_numpy(random_img))
+
     optimizer, scheduler = train_utils.setup_optimizer(model, args)
 
     logging.info(f"Size of model parameters: {train_utils.count_parameters_in_MB(model)} MB")
@@ -131,7 +134,7 @@ def main(args):
         train_start_time = timer()
 
     for epoch in range(start_epochs, args.run.epochs):
-        logging.info(f"\n| Epoch: {epoch:4d}/{args.run.epochs} | lr: {scheduler.get_lr()[0]} |")
+        logging.info(f"| Epoch: {epoch:4d}/{args.run.epochs} | lr: {scheduler.get_lr()[0]} |")
         model.drop_path_prob = args.train.drop_path_prob * epoch / args.run.epochs
 
         train_acc, train_obj, train_top5 = train(args, train_queue, model, criterion, optimizer)
