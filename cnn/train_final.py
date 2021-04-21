@@ -108,9 +108,9 @@ def main(args):
         genotype
     )
 
-    random_img = np.random.randint(0, 255, size=(1, 3, 32, 32))
-    writer.add_graph(model, input_to_model=torch.from_numpy(random_img))
-    
+    #random_img = np.random.randint(0, 255, size=(1, 3, 32, 32))
+    #writer.add_graph(model, input_to_model=torch.from_numpy(random_img))
+
     model = model.cuda()
 
     
