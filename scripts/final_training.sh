@@ -6,9 +6,9 @@ if [ $CONDA_DEFAULT_ENV != "gaea" ]; then
 	conda activate gaea
 fi
 python /home/julienf/git/gaea_release/cnn/train_final.py \
-    run.seed=95 \
+    run.seed=7141 \
     train.drop_path_prob=0.3 \
-    run.genotype_path=/home/julienf/data/genotype.json \
-    run.genotype_id=genotype_log &> /home/julienf/log_training.txt \
+    run.genotype_path=/home/julienf/data/search-pcdarts-eedarts-cifar10-7141-init_channels-16/genotype.json \
+    run.genotype_id=genotype_log_6_tensorboard \
     train.batch_size=64 \
-    train.init_channels=36
+    train.init_channels=36 &> /home/julienf/log_training_2.txt
