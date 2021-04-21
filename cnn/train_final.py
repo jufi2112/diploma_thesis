@@ -107,10 +107,13 @@ def main(args):
         args.train.auxiliary,
         genotype
     )
-    model = model.cuda()
 
     random_img = np.random.randint(0, 255, size=(1, 3, 32, 32))
     writer.add_graph(model, input_to_model=torch.from_numpy(random_img))
+    
+    model = model.cuda()
+
+    
 
     optimizer, scheduler = train_utils.setup_optimizer(model, args)
 
