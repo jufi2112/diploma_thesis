@@ -64,8 +64,9 @@ def main(args):
         sys.exit(1)
 
     torch.cuda.set_device(args.run.gpu)
-    logging.info("gpu device = %d" % args.run.gpu)
-    logging.info("args = %s", args.pretty())
+    logging.info("Search hyperparameters:")
+    #logging.info("gpu device = %d" % args.run.gpu)
+    logging.info(args.pretty())
 
     # Set random seeds for random, numpy, torch and cuda
     rng_seed = train_utils.RNGSeed(args.run.seed)
