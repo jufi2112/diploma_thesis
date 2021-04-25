@@ -163,7 +163,7 @@ def main(args):
 
         model.drop_path_prob = args.train.drop_path_prob * epoch / args.run.epochs
 
-        # training returns top1 and loss
+        # training returns top1, loss and top5
         train_acc, train_obj, train_top5 = train(
             args, train_queue, valid_queue, model, architect, criterion, optimizer, lr,
         )

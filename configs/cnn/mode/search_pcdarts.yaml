@@ -18,7 +18,7 @@ train:
 
 hydra:
     run:
-        dir: /home/julienf/data/search-${search.search_space}-${search.method}-${run.dataset}-${run.seed}-init_channels-${train.init_channels}
+        dir: /home/julienf/data/search-${search.search_space}-${search.method}-${run.dataset}-${run.seed}-single_level-${search.single_level}-init_channels-${train.init_channels}
     
     
 
