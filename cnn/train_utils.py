@@ -280,7 +280,7 @@ def create_nasbench_201_data_queues(args, eval_split=False):
 
 
 def create_cifar10_data_queues_own(args, evaluation_mode=False):
-    """Creates and returns CIFAR-10 data sets for experiments.
+    """Creates and returns CIFAR-10 train, validation and test data sets for experiments.
     This is a modification of the create_data_queues method more specifically tailored to the needs of my diploma thesis.
 
     Args:
@@ -296,6 +296,8 @@ def create_cifar10_data_queues_own(args, evaluation_mode=False):
         int, DataLoader, DataLoader, DataLoader, (int, int, int): Number of classes, train set, validation set, test set,
             tuple of (#train_samples, #valid_samples, #test_samples)
     """
+    if "nas-bench-201" in args.search.search_space:
+        raise ValueError("This function is not designed for NAS-Bench-201, use create_data_queues() instead. (Care different meaning of validation set though)")
     train_transform, valid_transform, test_transform = _data_transforms_cifar10(args)
     train_data = dset.CIFAR10(
         root=args.run.data, train=True, download=True, transform=train_transform

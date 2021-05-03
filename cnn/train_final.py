@@ -121,7 +121,12 @@ def main(args):
     total_params = sum(x.data.nelement() for x in model.parameters())
     logging.info(f"Total parameters of model: {total_params}")
 
-    num_train, num_classes, train_queue, valid_queue = train_utils.create_data_queues(
+    #num_train, num_classes, train_queue, valid_queue = train_utils.create_data_queues(
+    #    args, eval_split=True
+    #)
+    # TODO: valid_queue now has a different meaning than before (now: validation data, before: test data) 
+    # still need to change the relevant code for that
+    num_classes, train_queue, valid_queue, test_queue, (num_train, num_valid, num_test) = train_utils.create_cifar10_data_queues_own(
         args, eval_split=True
     )
 
