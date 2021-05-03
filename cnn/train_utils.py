@@ -14,7 +14,6 @@ from copy import deepcopy
 # from genotypes import PRIMITIVES
 import logging
 import torchvision.datasets as dset
-import torchvision.datasets as dset
 from torch.autograd import Variable
 from collections import deque
 import torchvision.transforms as transforms
@@ -94,7 +93,12 @@ def _data_transforms_cifar10(args):
     valid_transform = transforms.Compose(
         [transforms.ToTensor(), transforms.Normalize(CIFAR_MEAN, CIFAR_STD),]
     )
-    return train_transform, valid_transform
+
+    test_transform = transform.Compose(
+        [transforms.ToTensor(), transforms.Normalize(CIFAR_MEAN, CIFAR_STD)]
+    )
+
+    return train_transform, valid_transform, test_transform
 
 
 def count_parameters_in_MB(model):
@@ -275,14 +279,130 @@ def create_nasbench_201_data_queues(args, eval_split=False):
     return num_train, class_num, search_loader, valid_loader
 
 
-def create_data_queues(args, eval_split=False):
-    if "nas-bench-201" in args.search.search_space:
-        return create_nasbench_201_data_queues(args, eval_split)
+def create_cifar10_data_queues_own(args, evaluation_mode=False):
+    """Creates and returns CIFAR-10 data sets for experiments.
+    This is a modification of the create_data_queues method more specifically tailored to the needs of my diploma thesis.
 
-    train_transform, valid_transform = _data_transforms_cifar10(args)
+    Args:
+        args: Arguments
+        evaluation_mode (bool): Whether the data sets are used for architecture search or architecture evaluation.
+            During evaluation, only a small portion of the training data should be utilized for validation
+                (based on train.train_portion in eval.yaml)
+            During search, two possibilities exist:
+                single_level: Train and validation sets are identical.
+                bi-level: Train and validation sets are splitted according to search.train_portion in method_eedarts_space_pcdarts.yaml
+        
+    Returns:
+        int, DataLoader, DataLoader, DataLoader, (int, int, int): Number of classes, train set, validation set, test set,
+            tuple of (#train_samples, #valid_samples, #test_samples)
+    """
+    train_transform, valid_transform, test_transform = _data_transforms_cifar10(args)
     train_data = dset.CIFAR10(
         root=args.run.data, train=True, download=True, transform=train_transform
     )
+    
+    test_data = dset.CIFAR10(
+        root=args.run.data, train=False, download=True, transform=test_transform
+    )
+    num_train = len(train_data) # used to calculate splits for train and validation sets
+    train_indices = list(range(num_train))
+    number_train_images = 0 # used to simply keep track of how many training images there are
+    number_valid_images = 0
+    number_test_images = len(test_data)
+    if evaluation_mode:
+        # Evaluating a single architecture
+        valid_data = dset.CIFAR10(
+            root=args.run.data, train=True, download=True, transform=valid_transform
+        )
+        np.random.shuffle(train_indices)
+        train_end = int(np.floor(num_train * args.train.train_portion))
+        number_train_images = train_end
+        number_valid_images = num_train - number_train_images
+
+        train_sampler = torch.utils.data.sampler.SubsetRandomSampler(train_indices[:train_end])
+        valid_sampler = torch.utils.data.sampler.SubsetRandomSampler(train_indices[train_end:])
+
+        train_queue = torch.utils.data.DataLoader(
+            dataset=train_data,
+            batch_size=args.train.batch_size,
+            sampler=train_sampler,
+            pin_memory=True,
+            num_workers=args.run.n_threads_data
+        )
+        valid_queue = torch.utils.data.DataLoader(
+            dataset=valid_data,
+            batch_size=args.train.batch_size,
+            sampler=valid_sampler,
+            pin_memory=True,
+            num_workers=args.run.n_threads_data
+        )
+        test_queue = torch.utils.data.DataLoader(
+            dataset=test_data,
+            batch_size=args.train.batch_size,
+            shuffle=False,
+            pin_memory=True,
+            num_workers=args.run.n_threads_data
+        )
+    else:
+        # Architecture search
+        valid_data = deepcopy(train_data)   # want to have the exact same data (including preprocessing) as train_data
+
+        if args.search.single_level:
+            train_end = num_train
+            valid_start = 0
+        else:
+            split = int(np.floor(num_train * args.search.train_portion))
+            train_end = split
+            valid_start = split
+
+        number_train_images = train_end
+        number_valid_images = num_train - valid_start
+
+        train_sampler = torch.utils.data.sampler.SubsetRandomSampler(train_indices[:train_end])
+        valid_sampler = torch.utils.data.sampler.SubsetRandomSampler(train_indices[valid_start:])
+
+        train_queue = torch.utils.data.DataLoader(
+            dataset=train_data,
+            batch_size=args.train.batch_size,
+            sampler=train_sampler,
+            pin_memory=True,
+            num_workers=0
+        )
+        valid_queue = torch.utils.data.DataLoader(
+            dataset=valid_data,
+            batch_size=args.train.batch_size,
+            sampler=valid_sampler,
+            pin_memory=True,
+            num_workers=0
+        )
+        test_queue = torch.utils.data.DataLoader(
+            dataset=test_data,
+            batch_size=args.train.batch_size,
+            shuffle=False,
+            pin_memory=True,
+            num_workers=0
+        )
+    return 10, train_queue, valid_queue, test_queue, (number_train_images, number_valid_images, number_test_images)
+
+
+def create_data_queues(args, eval_split=False):
+    """Creates training and validation data queues.
+    When eval_split is set to true, returns test data instead of validation data.
+
+    Args:
+        args: Arguments
+        eval_split (bool): True if evaluating a single architecture from scratch (evaluation phase), false during search.
+            If set to true, returns test data instead of validation data
+    """
+    if "nas-bench-201" in args.search.search_space:
+        return create_nasbench_201_data_queues(args, eval_split)
+
+    train_transform, valid_transform, _ = _data_transforms_cifar10(args)
+    train_data = dset.CIFAR10(
+        root=args.run.data, train=True, download=True, transform=train_transform
+    )
+
+    # These are TEST IMAGES !!! not validation images
     valid_data = dset.CIFAR10(
         root=args.run.data, train=False, download=True, transform=valid_transform
     )
@@ -298,6 +418,7 @@ def create_data_queues(args, eval_split=False):
             num_workers=args.run.n_threads_data,
         )
 
+        # will contain test images
         valid_queue = torch.utils.data.DataLoader(
             valid_data,
             batch_size=args.train.batch_size,

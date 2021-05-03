@@ -103,11 +103,25 @@ def main(args):
     else:
         criterion = nn.CrossEntropyLoss()
 
-    num_train, num_classes, train_queue, valid_queue = train_utils.create_data_queues(
-        args
-    )
+    #num_train, num_classes, train_queue, valid_queue = train_utils.create_data_queues(
+    #    args
+    #)
+    num_classes, train_queue, valid_queue, test_queue (number_train, number_valid, number_test) = train_utils.create_cifar10_data_queues_own(args)
+
+    print(f"Single_level: {args.search.single_level}")
 
     print("dataset: {}, num_classes: {}".format(args.run.dataset, num_classes))
+    print("Evaluation_mode = False")
+    print(f"Number of training images: {number_train}")
+    print(f"Number of validation images: {number_valid}")
+    print(f"Number of test images (unused during search): {number_test}")
+
+    print("Evaluation_mode = True")
+    num_classes, train_queue, valid_queue, test_queue (number_train, number_valid, number_test) = train_utils.create_cifar10_data_queues_own(args, evaluation_mode=True)
+    print(f"Number of training images: {number_train}")
+    print(f"Number of validation images: {number_valid}")
+    print(f"Number of test images (unused during search): {number_test}")
+    sys.exit(-1)
 
     model = Network(
         args.train.init_channels,

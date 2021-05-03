@@ -16,6 +16,7 @@ train:
     auxiliary_weight: 0.4
     drop_path_prob: 0.2
     grad_clip: 5
+    train_portion: 0.8
 
 
 
