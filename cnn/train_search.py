@@ -106,7 +106,7 @@ def main(args):
     #num_train, num_classes, train_queue, valid_queue = train_utils.create_data_queues(
     #    args
     #)
-    num_classes, train_queue, valid_queue, test_queue (number_train, number_valid, number_test) = train_utils.create_cifar10_data_queues_own(args)
+    num_classes, train_queue, valid_queue, test_queue, (number_train, number_valid, number_test) = train_utils.create_cifar10_data_queues_own(args)
 
     print(f"Single_level: {args.search.single_level}")
 
