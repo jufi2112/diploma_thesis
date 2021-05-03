@@ -5,7 +5,15 @@ import torch.nn as nn
 
 
 class SuperNetwork(nn.Module):
-    """
+    """Base class for super networks
+
+    Args:
+        C (int): Initial number of channels for the network.
+        nodes (int): Number of intermediate nodes in each cell.
+        num_classes (int): Number of classes the network should be able to predict.
+        layers (int): Overall number of cells the network should consist of.
+            Includes both normal cells and reduction cells.
+        criterion (callable): Criterion for loss calculation
     """
     def __init__(self, C, num_classes, nodes, layers, criterion):
         super(SuperNetwork, self).__init__()

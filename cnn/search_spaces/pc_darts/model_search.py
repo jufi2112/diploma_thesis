@@ -26,35 +26,68 @@ def channel_shuffle(x, groups):
 
 
 class MixedOp(nn.Module):
-    def __init__(self, C, stride, op_names):
+    """Mixed operation utilized to relax architecture search space.
+    Employed on every edge during the search phase.
+    
+    Args:
+        C (int): Number of channels the mixed operations should have.
+            Channel subsampling (PC-DARTS) is performed based on this number. 
+        stride (int): Stride of the operations
+        op_names (list of str): The names of all operations that should be employed on the edge
+        subsampling_factor (int): Channel subsampling factor for partial-channel connections.
+            Defaults to 4. This is k from the corresponding PC-DARTS paper.
+    """
+    def __init__(self, C, stride, op_names, subsampling_factor=4):
         super(MixedOp, self).__init__()
         self._ops = nn.ModuleList()
+        self._subsampling_factor = subsampling_factor
         self.mp = nn.MaxPool2d(2, 2)
 
         for primitive in op_names:
-            op = OPS[primitive](C // 4, stride, False)
+            op = OPS[primitive](C // self._subsampling_factor, stride, False)  # 4 = k
             if "pool" in primitive:
-                op = nn.Sequential(op, nn.BatchNorm2d(C // 4, affine=False))
+                op = nn.Sequential(op, nn.BatchNorm2d(C // self._subsampling_factor, affine=False))
             self._ops.append(op)
 
     def forward(self, x, weights):
-        # channel proportion k=4
+        """Forward pass through mixed operation.
+
+        Args:
+            x (torch.Tensor): Input feature map
+            weights (torch.Tensor): Operational weights ("alphas")
+        """
+        # channel proportion k=4 by default
         dim_2 = x.shape[1]
-        xtemp = x[:, : dim_2 // 4, :, :]
-        xtemp2 = x[:, dim_2 // 4 :, :, :]
+        xtemp =  x[:, :dim_2 // self._subsampling_factor, :, :]    # used for operations
+        xtemp2 = x[:, dim_2 // self._subsampling_factor:, :, :]   # bypass operations
         temp1 = sum(w * op(xtemp) for w, op in zip(weights, self._ops))
-        # reduction cell needs pooling before concat
+        # reduction cell needs pooling before concat to align spatial dimensions
         if temp1.shape[2] == x.shape[2]:
             ans = torch.cat([temp1, xtemp2], dim=1)
         else:
             ans = torch.cat([temp1, self.mp(xtemp2)], dim=1)
-        ans = channel_shuffle(ans, 4)
+        ans = channel_shuffle(ans, self._subsampling_factor)
         # ans = torch.cat([ans[ : ,  dim_2//4:, :, :],ans[ : , :  dim_2//4, :, :]],dim=1)
         # except channe shuffle, channel shift also works
         return ans
 
 
 class Cell(nn.Module):
+    """Definition of one cell.
+
+    Args:
+        steps (int): Number of intermediate nodes the cell should consist of.
+        multiplier (int): Factor by which the cell increases the number of channels.
+            Determines the number of output channels of the cell.
+            Should be equal to the number if intermediate nodes.
+            Number of output channels = multiplier * C
+        C_prev_prev (int): Number of channels of the penultimate cell, a.k.a. input to input node 0 (c_k-2)
+        C_prev (int): Number of channels of the previous cell, a.k.a. input to input node 1 (c_k-1)
+        C (int): Number of channels every mixed operation inside the cell should have.
+        reduction (bool): Whether this cell is a reduction cell.
+        reduction_prev (bool): Whether the previous cell was a reduction cell.
+        op_names (list of str): Name of all operations in the search space.
+    """
     def __init__(
         self,
         steps,
@@ -79,18 +112,41 @@ class Cell(nn.Module):
 
         self._ops = nn.ModuleList()
         self._bns = nn.ModuleList()
+        # iterate through every possible edge
         for i in range(self._steps):
-            for j in range(2 + i):
+            for j in range(2 + i):  
+                # all operations adjacent to input nodes are of stride 2
                 stride = 2 if reduction and j < 2 else 1
                 op = MixedOp(C, stride, op_names)
                 self._ops.append(op)
+                # Order of edges inside this list is:
+                # {c_k-2} -> 0
+                # {c_k-1] -> 0
+                # {c_k-2} -> 1
+                # {c_k-1] -> 1
+                # 0       -> 1
+                # {c_k-2} -> 2
+                # {c_k-1] -> 2
+                # 0       -> 2
+                # 1       -> 2
+                # ...
 
     def forward(self, s0, s1, weights, weights2):
+        """Forward pass through the cell.
+
+        Args:
+            s0 (torch.Tensor): Input {c_k-2}
+            s1 (torch.Tensor): Input {c_k-1}
+            weights (torch.Tensor): Weights for mixed operation calculation ("alphas").
+            weights2 (torch.Tensor): Weights for edge normalization ("betas").
+        """
+        # align spatial dimensions and number of channels of input
         s0 = self.preprocess0(s0)
         s1 = self.preprocess1(s1)
 
         states = [s0, s1]
         offset = 0
+        # iterate through every possible edge
         for i in range(self._steps):
             s = sum(
                 weights2[offset + j] * self._ops[offset + j](h, weights[offset + j])
@@ -103,6 +159,25 @@ class Cell(nn.Module):
 
 
 class PCDARTSNetwork(SuperNetwork):
+    """Complete PC-DARTS network, which is build up from cells
+
+    Args:
+        C (int): Initial number of channels for the network.
+            Number of channels used for the very first cell.
+            Number of channels is doubled every time a reduction cell is inserted.
+        num_classes (int): Number of classes the network should be able to predict.
+        nodes (int): Number of intermediate nodes that each cell should consist of.
+        layers (int): Number of cells the overall network should consist of.
+            Includes both normal and reduction cells.
+        criterion (callable): The loss criterion.
+        search_space_name (str): Name of the search space.
+        exclude_zero (bool): Whether to exclude the zero operation from the set of learnable operations
+        multiplier (int): Factor by how much each cell increases the number of channels from its input to its output.
+            Should be equal to the number of intermediate nodes.
+        Number of intermediate nodes that each cell should consist of.
+        stem_multiplier (int): Factor that determines the number of channels the convolutional stem should result into.
+            The actual number is calculated as stem_multiplier * C
+    """
     def __init__(
         self,
         C,
@@ -118,6 +193,7 @@ class PCDARTSNetwork(SuperNetwork):
     ):
         assert search_space_name == "pcdarts"
         super(PCDARTSNetwork, self).__init__(C, num_classes, nodes, layers, criterion)
+        # values are redefined (already defined in base class)
         self._C = C
         self._num_classes = num_classes
         self._layers = layers
@@ -140,7 +216,8 @@ class PCDARTSNetwork(SuperNetwork):
 
         C_curr = stem_multiplier * C
         self.stem = nn.Sequential(
-            nn.Conv2d(3, C_curr, 3, padding=1, bias=False), nn.BatchNorm2d(C_curr)
+            nn.Conv2d(3, C_curr, 3, padding=1, bias=False), 
+            nn.BatchNorm2d(C_curr)
         )
 
         C_prev_prev, C_prev, C_curr = C_curr, C_curr, C
@@ -243,6 +320,7 @@ class PCDARTSNetwork(SuperNetwork):
         return gene
 
     def genotype(self, weights):
+        """Returns the current genotype"""
         normal_weights = weights["normal"]
         reduce_weights = weights["reduce"]
         gene_normal = self._parse(normal_weights)

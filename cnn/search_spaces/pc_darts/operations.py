@@ -128,9 +128,18 @@ class Zero(nn.Module):
 
 
 class FactorizedReduce(nn.Module):
+    """Reduces the spational dimensionality of the input 
+
+    Args:
+        C_in (int): Number of input channels.
+        C_out (int): Number of output channels.
+        affine (bool): Activate learnable affine parameters for batch normalization.
+            See https://discuss.pytorch.org/t/affine-parameter-in-batchnorm/6005
+    """
     def __init__(self, C_in, C_out, affine=True):
         super(FactorizedReduce, self).__init__()
-        assert C_out % 2 == 0
+        assert C_out % 2 == 0, f"Expected number of output channels to be even, but got {C_out}"
+
         self.relu = nn.ReLU(inplace=False)
         self.conv_1 = nn.Conv2d(C_in, C_out // 2, 1, stride=2, padding=0, bias=False)
         self.conv_2 = nn.Conv2d(C_in, C_out // 2, 1, stride=2, padding=0, bias=False)
@@ -138,6 +147,7 @@ class FactorizedReduce(nn.Module):
 
     def forward(self, x):
         x = self.relu(x)
+        # https://github.com/quark0/darts/issues/84
         out = torch.cat([self.conv_1(x), self.conv_2(x[:, :, 1:, 1:])], dim=1)
         out = self.bn(out)
         return out
