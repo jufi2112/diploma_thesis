@@ -94,7 +94,7 @@ def _data_transforms_cifar10(args):
         [transforms.ToTensor(), transforms.Normalize(CIFAR_MEAN, CIFAR_STD),]
     )
 
-    test_transform = transform.Compose(
+    test_transform = transforms.Compose(
         [transforms.ToTensor(), transforms.Normalize(CIFAR_MEAN, CIFAR_STD)]
     )
 
