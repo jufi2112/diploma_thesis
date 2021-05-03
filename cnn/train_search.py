@@ -117,7 +117,7 @@ def main(args):
     print(f"Number of test images (unused during search): {number_test}")
 
     print("Evaluation_mode = True")
-    num_classes, train_queue, valid_queue, test_queue (number_train, number_valid, number_test) = train_utils.create_cifar10_data_queues_own(args, evaluation_mode=True)
+    num_classes, train_queue, valid_queue, test_queue, (number_train, number_valid, number_test) = train_utils.create_cifar10_data_queues_own(args, evaluation_mode=True)
     print(f"Number of training images: {number_train}")
     print(f"Number of validation images: {number_valid}")
     print(f"Number of test images (unused during search): {number_test}")
