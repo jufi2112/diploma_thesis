@@ -282,6 +282,7 @@ def create_nasbench_201_data_queues(args, eval_split=False):
 def create_cifar10_data_queues_own(args, evaluation_mode=False):
     """Creates and returns CIFAR-10 train, validation and test data sets for experiments.
     This is a modification of the create_data_queues method more specifically tailored to the needs of my diploma thesis.
+    During single level search, two train datasets with the same images are returned to enable usage of the existing code
 
     Args:
         args: Arguments
@@ -289,12 +290,18 @@ def create_cifar10_data_queues_own(args, evaluation_mode=False):
             During evaluation, only a small portion of the training data should be utilized for validation
                 (based on train.train_portion in eval.yaml)
             During search, two possibilities exist:
-                single_level: Train and validation sets are identical.
-                bi-level: Train and validation sets are splitted according to search.train_portion in method_eedarts_space_pcdarts.yaml
+                single_level: Only a small portion of the training data should be utilized for validation
+                    (based on search.train_portion_single_level in method_eedarts_space_pcdarts.yaml)
+                bi-level: Train and validation sets are splitted according to 
+                    search.train_portion_bi_level in method_eedarts_space_pcdarts.yaml
         
     Returns:
-        int, DataLoader, DataLoader, DataLoader, (int, int, int): Number of classes, train set, validation set, test set,
-            tuple of (#train_samples, #valid_samples, #test_samples)
+        int, (DataLoader, DataLoader), DataLoader, DataLoader, (int, int, int): Number of classes, tuple that contains
+            two data loaders for the same training data, the validation dataset, test dataset as well as a tuple that
+            contains the number of training, validation and test images.
+            During evaluation or when using bi-level search, the second entry in the tuple of training data will be
+            None. During single-level search, this second train dataset is provided.
+
     """
     if "nas-bench-201" in args.search.search_space:
         raise ValueError("This function is not designed for NAS-Bench-201, use create_data_queues() instead. (Care different meaning of validation set though)")
@@ -302,7 +309,9 @@ def create_cifar10_data_queues_own(args, evaluation_mode=False):
     train_data = dset.CIFAR10(
         root=args.run.data, train=True, download=True, transform=train_transform
     )
-    
+    valid_data = dset.CIFAR10(
+        root=args.run.data, train=True, download=True, transform=valid_transform
+    )
     test_data = dset.CIFAR10(
         root=args.run.data, train=False, download=True, transform=test_transform
     )
@@ -313,10 +322,7 @@ def create_cifar10_data_queues_own(args, evaluation_mode=False):
     number_test_images = len(test_data)
     if evaluation_mode:
         # Evaluating a single architecture
-        valid_data = dset.CIFAR10(
-            root=args.run.data, train=True, download=True, transform=valid_transform
-        )
-        np.random.shuffle(train_indices)
+        #np.random.shuffle(train_indices)
         train_end = int(np.floor(num_train * args.train.train_portion))
         number_train_images = train_end
         number_valid_images = num_train - number_train_images
@@ -331,6 +337,7 @@ def create_cifar10_data_queues_own(args, evaluation_mode=False):
             pin_memory=True,
             num_workers=args.run.n_threads_data
         )
+        train_2_queue = None
         valid_queue = torch.utils.data.DataLoader(
             dataset=valid_data,
             batch_size=args.train.batch_size,
@@ -347,26 +354,36 @@ def create_cifar10_data_queues_own(args, evaluation_mode=False):
         )
     else:
         # Architecture search
-        valid_data = deepcopy(train_data)   # want to have the exact same data (including preprocessing) as train_data
-
         if args.search.single_level:
-            train_end = num_train
-            valid_start = 0
-        else:
-            split = int(np.floor(num_train * args.search.train_portion))
+            split = int(np.floor(num_train * args.search.train_portion_single_level))
             train_end = split
+            train_2_end = split
+            valid_start = split
+        else:
+            valid_data = deepcopy(train_data) # want to have the exact same data (including preprocessing) as train_data
+            split = int(np.floor(num_train * args.search.train_portion_bi_level))
+            train_end = split
+            train_2_end = None  # don't need second train data loader for bi-level, since we use validation set for this
             valid_start = split
 
         number_train_images = train_end
         number_valid_images = num_train - valid_start
 
         train_sampler = torch.utils.data.sampler.SubsetRandomSampler(train_indices[:train_end])
+        train_2_sampler = None if train_2_end == None else torch.utils.data.sampler.SubsetRandomSampler(train_indices[:train_2_end]) # only used during single level search
         valid_sampler = torch.utils.data.sampler.SubsetRandomSampler(train_indices[valid_start:])
 
         train_queue = torch.utils.data.DataLoader(
             dataset=train_data,
             batch_size=args.train.batch_size,
             sampler=train_sampler,
+            pin_memory=True,
+            num_workers=0
+        )
+        train_2_queue = None if train_2_end == None else torch.utils.data.DataLoader(
+            dataset=train_data,
+            batch_size=args.train.batch_size,
+            sampler=train_2_sampler,
             pin_memory=True,
             num_workers=0
         )
@@ -384,7 +401,7 @@ def create_cifar10_data_queues_own(args, evaluation_mode=False):
             pin_memory=True,
             num_workers=0
         )
-    return 10, train_queue, valid_queue, test_queue, (number_train_images, number_valid_images, number_test_images)
+    return 10, (train_queue, train_2_queue), valid_queue, test_queue, (number_train_images, number_valid_images, number_test_images)
 
 
 def create_data_queues(args, eval_split=False):

@@ -106,12 +106,13 @@ def main(args):
     #num_train, num_classes, train_queue, valid_queue = train_utils.create_data_queues(
     #    args
     #)
-    num_classes, train_queue, valid_queue, test_queue, (number_train, number_valid, number_test) = train_utils.create_cifar10_data_queues_own(args)
+    num_classes, (train_queue, train_2_queue), valid_queue, test_queue, (number_train, number_valid, number_test) = train_utils.create_cifar10_data_queues_own(args)
 
     logging.info(f"Dataset: {args.run.dataset}, num_classes: {num_classes}")
     logging.info(f"Number of training images: {number_train}")
     logging.ingo(f"Number of validation images: {number_valid}")
     logging.info(f"Number of test images (unused during search): {number_test}")
+    logging.info(f"train_2_queue: {train_2_queue}")
 
     model = Network(
         args.train.init_channels,
@@ -153,7 +154,7 @@ def main(args):
         #    valid_queue,
         #) = train_utils.create_data_queues(args)
         # TODO: why are data queues reloaded?
-        num_classes, train_queue, valid_queue, test_queue, (number_train, number_valid, number_test) = train_utils.create_cifar10_data_queues_own(args)
+        num_classes, (train_queue, train_2_queue), valid_queue, test_queue, (number_train, number_valid, number_test) = train_utils.create_cifar10_data_queues_own(args)
         logging.info('Resumed training from a previous checkpoint. Runtime measurement will be wrong.')
         train_start_time = 0
     except Exception as e:
@@ -346,6 +347,7 @@ def train(
         input_search = Variable(input_search, requires_grad=False).cuda()
         target_search = Variable(target_search, requires_grad=False).cuda()
 
+        # set the model in train mode (important for layers like dropout and batch normalization)
         model.train()
 
         # TODO: move architecture args into a separate dictionary within args
