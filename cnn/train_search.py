@@ -110,9 +110,11 @@ def main(args):
 
     logging.info(f"Dataset: {args.run.dataset}, num_classes: {num_classes}")
     logging.info(f"Number of training images: {number_train}")
-    logging.ingo(f"Number of validation images: {number_valid}")
+    if args.search.single_level:
+        logging.info(f"Number of validation images (unused during search): {number_valid}")
+    else:
+        logging.info(f"Number of validation images (used during search): {number_valid}")
     logging.info(f"Number of test images (unused during search): {number_test}")
-    logging.info(f"train_2_queue: {train_2_queue}")
 
     model = Network(
         args.train.init_channels,
@@ -162,8 +164,8 @@ def main(args):
         start_epochs = 0
         train_start_time = timer()
 
-    best_valid = 0
-    epoch_best_valid = 0
+    best_valid = 0      # for single-level search, corresponds to best train accuracy observed so far
+    epoch_best_valid = 0    # for single-level search, corresponds to the epoch of the best observed train accuracy so far
     overall_visualization_time = 0 # don't count visualization into runtime
     for epoch in range(start_epochs, args.run.epochs):
         lr = scheduler.get_lr()[0]
@@ -173,7 +175,8 @@ def main(args):
 
         # training returns top1, loss and top5
         train_acc, train_obj, train_top5 = train(
-            args, train_queue, valid_queue, model, architect, criterion, optimizer, lr,
+            args, train_queue, valid_queue if train_2_queue == None else train_2_queue, # valid_queue for bi-level search, train_2_queue for single-level search
+            model, architect, criterion, optimizer, lr,
         )
         architect.baseline = train_obj
         architect.update_history()
@@ -208,40 +211,46 @@ def main(args):
         stream_normal = io.BytesIO(binary_normal)
         graph_normal = np.array(PIL.Image.open(stream_normal).convert("RGB"))
         own_writer.add_image("Normal_Cell", graph_normal, epoch, dataformats="HWC")
-        del genotype_graph_normal
-        del binary_normal
-        del stream_normal
-        del graph_normal
+        #del genotype_graph_normal
+        #del binary_normal
+        #del stream_normal
+        #del graph_normal
 
         genotype_graph_reduce = visualize.plot(genotype.reduce, "", return_type="graph", output_format='png')
         binary_reduce = genotype_graph_reduce.pipe()
         stream_reduce = io.BytesIO(binary_reduce)
         graph_reduce = np.array(PIL.Image.open(stream_reduce).convert("RGB"))
         own_writer.add_image("Reduce_Cell", graph_reduce, epoch, dataformats="HWC")
-        del genotype_graph_reduce
-        del binary_reduce
-        del stream_reduce
-        del graph_reduce
+        #del genotype_graph_reduce
+        #del binary_reduce
+        #del stream_reduce
+        #del graph_reduce
         end_visualization = timer()
         overall_visualization_time += (end_visualization - start_visualization)
 
-        if not args.search.single_level:
-            valid_acc, valid_obj, valid_top5 = train_utils.infer(
-                valid_queue,
-                model,
-                criterion,
-                report_freq=args.run.report_freq,
-                discrete=args.search.discrete,
-            )
-            own_writer.add_scalar('Loss/valid', valid_obj, epoch)
-            own_writer.add_scalar('Top1/valid', valid_acc, epoch)
-            own_writer.add_scalar('Top5/valid', valid_top5, epoch)
+        # log validation metrics, but don't utilize them for decisions during single-level search 
+        valid_acc, valid_obj, valid_top5 = train_utils.infer(
+            valid_queue,
+            model,
+            criterion,
+            report_freq=args.run.report_freq,
+            discrete=args.search.discrete,
+        )
+        own_writer.add_scalar('Loss/valid', valid_obj, epoch)
+        own_writer.add_scalar('Top1/valid', valid_acc, epoch)
+        own_writer.add_scalar('Top5/valid', valid_top5, epoch)
+        logging.info(f"| valid_acc: {valid_acc} |")
 
+        if not args.search.single_level:    
             if valid_acc > best_valid:
                 best_valid = valid_acc
                 best_genotype = architect.genotype()
                 epoch_best_valid = epoch
-            logging.info(f"| valid_acc: {valid_acc} |")
+        else:
+            if train_acc > best_valid:
+                best_valid = train_acc
+                best_genotype = architect.genotype()
+                epoch_best_valid = epoch
 
         train_utils.save(
             save_dir,
@@ -259,25 +268,37 @@ def main(args):
     train_end_time = timer()
     logging.info(f"Visualization of cells during search took a total of {timedelta(seconds=overall_visualization_time)} (hh:mm:ss).")
     logging.info(f"This time is not included in the runtime given below.\n")
-    logging.info(f"Training finished after {timedelta(seconds=((train_end_time - train_start_time) - overall_visualization_time))}(hh:mm:ss). Performing validation of final epoch...")
-    valid_acc, valid_obj, valid_top5 = train_utils.infer(
-        valid_queue,
-        model,
-        criterion,
-        report_freq=args.run.report_freq,
-        discrete=args.search.discrete,
-    )
+    logging.info(f"Training finished after {timedelta(seconds=((train_end_time - train_start_time) - overall_visualization_time))}(hh:mm:ss).")# Performing validation of final epoch...")
+    #valid_acc, valid_obj, valid_top5 = train_utils.infer(
+    #    valid_queue,
+    #    model,
+    #    criterion,
+    #    report_freq=args.run.report_freq,
+    #    discrete=args.search.discrete,
+    #)
 
-    own_writer.add_scalar('Loss/valid', valid_obj, args.run.epochs-1)
-    own_writer.add_scalar('Top1/valid', valid_acc, args.run.epochs-1)
-    own_writer.add_scalar('Top5/valid', valid_top5, args.run.epochs-1)
+    #own_writer.add_scalar('Loss/valid', valid_obj, args.run.epochs-1)
+    #own_writer.add_scalar('Top1/valid', valid_acc, args.run.epochs-1)
+    #own_writer.add_scalar('Top5/valid', valid_top5, args.run.epochs-1)
+    #logging.info(f"| valid_acc: {valid_acc} |")
 
-    if valid_acc > best_valid:
-        best_valid = valid_acc
-        best_genotype = architect.genotype()
-        epoch_best_valid = args.run.epochs-1
-    logging.info(f"| valid_acc: {valid_acc} |")
+    #if  not args.search.single_level:
+    #    if valid_acc > best_valid:
+    #        best_valid = valid_acc
+    #        best_genotype = architect.genotype()
+    #        epoch_best_valid = args.run.epochs-1
+    #else:
+    #    if train_acc > best_valid:
+    #        best_valid = train_acc
+    #        best_genotype = architect.genotype()
+    #        epoch_best_valid = args.run.epochs-1
 
+
+    if args.search.single_level:
+        logging.info((
+            f"\nBecause single-level search is performed, the best genotype was not selected according to the best achieved validation accuracy "
+            f"but according to the best train accuracy."
+        ))
     logging.info(f"\nOverall best found genotype with validation accuracy of {best_valid} (found in epoch {epoch_best_valid}):")
     logging.info(f"{best_genotype}")
 

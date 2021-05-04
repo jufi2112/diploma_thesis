@@ -126,7 +126,7 @@ def main(args):
     #)
     # TODO: valid_queue now has a different meaning than before (now: validation data, before: test data) 
     # still need to change the relevant code for that
-    num_classes, train_queue, valid_queue, test_queue, (num_train, num_valid, num_test) = train_utils.create_cifar10_data_queues_own(
+    num_classes, (train_queue, _), valid_queue, test_queue, (num_train, num_valid, num_test) = train_utils.create_cifar10_data_queues_own(
         args, eval_split=True
     )
 
@@ -154,6 +154,10 @@ def main(args):
             valid_queue, model, criterion, report_freq=args.run.report_freq
         )
         logging.info(f"| valid_acc: {valid_acc} |")
+        test_acc, test_obj, test_top5 = train_utils.infer(
+            test_queue, model, criterion, report_freq=num_test+1
+        )
+        logging.info(f"| test_acc: {test_acc} |")
 
         # log values
         writer.add_scalar("Loss/train", train_obj, epoch)
@@ -163,6 +167,10 @@ def main(args):
         writer.add_scalar("Loss/valid", valid_obj, epoch)
         writer.add_scalar("Top1/valid", valid_acc, epoch)
         writer.add_scalar("Top5/valid", valid_top5, epoch)
+
+        writer.add_scalar("Loss/test", test_obj, epoch)
+        writer.add_scalar("Top1/test", test_acc, epoch)
+        writer.add_scalar("Top5/test", test_top5, epoch)
 
         train_utils.save(
             os.getcwd(), epoch+1, rng_seed, model, optimizer, s3_bucket=None
