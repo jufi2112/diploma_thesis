@@ -10,6 +10,7 @@ import aws_utils
 import pickle
 from lr_schedulers import *
 from copy import deepcopy
+from datetime import timedelta
 
 # from genotypes import PRIMITIVES
 import logging
@@ -519,6 +520,8 @@ def save(
     architect=None,
     save_history=False,
     s3_bucket=None,
+    runtime=0.0,
+    best_accuracies=None
 ):
     """
     Create checkpoint and save to directory.
@@ -532,6 +535,8 @@ def save(
         optimizer: model optimizer
         architect: architect object with its own get_save_states method
         s3_bucket: s3 bucket name for saving to AWS s3
+        runtime (float): Current runtime of the method as given by timeit.timer
+        best_accuracies (dict): Dictionary that keeps track of the currently best observed genotype and its properties
     """
 
     checkpoint = {
@@ -539,10 +544,20 @@ def save(
         "rng_seed": rng_seed.get_save_states(),
         "optimizer": optimizer.state_dict(),
         "model": model.get_save_states(),
+        "runtime": runtime
     }
 
     if architect is not None:
         checkpoint["architect"] = architect.get_save_states()
+
+    if best_accuracies is not None:
+        checkpoint['best_accuracies'] = {
+            'train': best_accuracies['train'],
+            'valid': best_accuracies['valid'],
+            'epoch': best_accuracies['epoch'],
+            'genotype_dict': best_accuracies['genotype_dict'],
+            'runtime': best_accuracies['runtime']
+        }
 
     ckpt = os.path.join(folder, "model.ckpt")
     torch.save(checkpoint, ckpt)
@@ -570,6 +585,14 @@ def save(
 
 
 def load(folder, rng_seed, model, optimizer, architect=None, s3_bucket=None):
+    """Loads checkpoint
+
+    Returns:
+        int: Epochs
+        history
+        int: Current overall runtime of the model
+        dict: Properties of the currently best observed genotype
+    """
     # Try to download log and ckpt from s3 first to see if a ckpt exists.
     ckpt = os.path.join(folder, "model.ckpt")
     history_file = os.path.join(folder, "history.pkl")
@@ -594,12 +617,21 @@ def load(folder, rng_seed, model, optimizer, architect=None, s3_bucket=None):
     rng_seed.load_states(checkpoint["rng_seed"])
     model.load_states(checkpoint["model"])
     optimizer.load_state_dict(checkpoint["optimizer"])
+    if "runtime" in checkpoint.keys():
+        runtime = checkpoint["runtime"])
+    else:
+        runtime = 0
+    if "best_accuracies" in checkpoint.keys():
+        best_accuracies = checkpoint["best_accuracies"]
+    else:
+        best_accuracies = None
     if architect is not None:
         architect.load_states(checkpoint["architect"])
 
-    logging.info("Resumed model trained for %d epochs" % epochs)
+    logging.info(f"Resumed model trained for {epochs} epochs")
+    logging.info(f"Resumed model trained for {timedelta(seconds=runtime)} hh:mm:ss")
 
-    return epochs, history
+    return epochs, history, runtime, best_accuracies
 
 
 def infer(valid_queue, model, criterion, report_freq=50, discrete=False):

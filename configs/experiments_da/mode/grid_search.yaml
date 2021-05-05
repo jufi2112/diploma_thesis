@@ -1,0 +1,6 @@
+﻿method:
+    name: "grid_search"
+
+hydra:
+    run:
+        dir: D:\\Users\\Julien\\Documents\\Diplom_Results\\experiments_da\\${method.name}

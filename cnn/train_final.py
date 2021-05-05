@@ -132,7 +132,7 @@ def main(args):
 
     # check if we already trained
     try:
-        start_epochs, _ = train_utils.load(
+        start_epochs, _, _, _ = train_utils.load(
             os.getcwd(), rng_seed, model, optimizer, s3_bucket=None
         )
         scheduler.last_epoch = start_epochs - 1

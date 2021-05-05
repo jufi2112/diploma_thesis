@@ -1,0 +1,90 @@
+﻿defaults:
+    # grid_search or gp
+    - mode: ???   
+
+search:
+    # single-level or bi-level optimization
+    single_level: true
+    # exclude zero-operation from list of all possible operations
+    exclude_zero: false
+    track_running_stats: true
+    method: eedarts
+    search_space: pcdarts 
+    nodes: 4
+    arch_grad_clip: null 
+    train_portion_bi_level: 0.5
+    train_portion_single_level: 0.8
+    arch_learning_rate: 0.1
+    edge_learning_rate: 0.1
+    discrete: false
+    adapt_lr: false 
+    arch_weight_decay: 0.0 
+    gd: false
+    learn_edges: true 
+    trace_norm: 8
+
+train_search_phase:
+    scheduler: cosine
+    lr_anneal_cycles: 1
+    smooth_cross_entropy: false
+    batch_size: 64 
+    learning_rate: 0.1
+    learning_rate_min: 0.0
+    momentum: 0.9
+    weight_decay: 0.0003
+    init_channels: 16
+    layers: 8   # number of cells the final network should be composed of
+    cutout: false
+    auxiliary: false # @see https://stats.stackexchange.com/questions/304699/what-is-auxiliary-loss-as-mentioned-in-pspnet-paper
+    auxiliary_weight: 0.4
+    drop_path_prob: 0
+    grad_clip: 5
+
+run_search_phase:
+    s3_bucket: null
+    seed: ???
+    data: /home/julienf/data
+    dataset: cifar10 
+    epochs: 50
+    scheduler_epochs: 50
+    n_threads_data: 0
+    autodl: /home/julienf/git/gaea_release/AutoDL-Projects
+    report_freq: 50
+    test_code: false
+    gpu: 0
+
+train_eval_phase:
+    arch: null   # not used in train_final.py
+    scheduler: cosine
+    lr_anneal_cycles: 1
+    smooth_cross_entropy: false
+    batch_size: 96 
+    learning_rate: 0.025
+    learning_rate_min: 0.0
+    momentum: 0.9
+    weight_decay: 0.0003
+    init_channels: 36
+    layers: 20 # number of cells the final network should be composed of
+    cutout: true
+    cutout_length: 16
+    auxiliary: true # @see https://stats.stackexchange.com/questions/304699/what-is-auxiliary-loss-as-mentioned-in-pspnet-paper
+    auxiliary_weight: 0.4
+    drop_path_prob: 0.2
+    grad_clip: 5
+    train_portion: 0.8
+
+run_eval_phase:
+    s3_bucket: null
+    seed: ???
+    data: /home/julienf/data
+    dataset: cifar10 
+    epochs: 600
+    scheduler_epochs: ${run.epochs}
+    n_threads_data: 0
+    report_freq: 50
+    gpu: 0
+
+
+hydra:
+    run:
+        dir: D:\\Users\\Julien\\Documents\\Diplom_Results\\experiments_da

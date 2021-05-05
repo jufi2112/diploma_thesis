@@ -86,7 +86,7 @@ def main(args):
     logging.info("Model total parameters: {}".format(total_params))
 
     try:
-        start_epochs, _ = train_utils.load(
+        start_epochs, _, _, _ = train_utils.load(
             os.getcwd(), rng_seed, model, optimizer, s3_bucket=s3_bucket
         )
         scheduler.last_epoch = start_epochs - 1

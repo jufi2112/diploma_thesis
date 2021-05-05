@@ -30,10 +30,6 @@ from datetime import timedelta
 @hydra.main(config_path="../configs/cnn/config.yaml", strict=False)
 def main(args):
     """Performs NAS.
-    
-    Returns:
-        str: Path to the json file where the genotype of the selected architecture was dumped to.
-
     """
     np.set_printoptions(precision=3)
     save_dir = os.getcwd()
@@ -145,7 +141,7 @@ def main(args):
 
     # Try to load a previous checkpoint
     try:
-        start_epochs, history = train_utils.load(
+        start_epochs, history, _, _ = train_utils.load(
             save_dir, rng_seed, model, optimizer, architect, args.run.s3_bucket
         )
         scheduler.last_epoch = start_epochs - 1
@@ -349,7 +345,7 @@ def train(
     top5 = train_utils.AvgrageMeter()
 
     for step, datapoint in enumerate(train_queue):
-        # The search dataqueue for nas-bench-201  returns both train and valid data
+        # The search dataqueue for nas-bench-201 returns both train and valid data
         # when looping through queue.  This is disabled with single level is indicated.
         if "nas-bench-201" in args.search.search_space and not (
             args.search.single_level
