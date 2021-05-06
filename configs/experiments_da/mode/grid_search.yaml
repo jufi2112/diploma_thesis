@@ -1,5 +1,6 @@
 ﻿method:
     name: "grid_search"
+    mode: "search_only" # search_only, evaluate_only, sequential
 
 hydra:
     run:

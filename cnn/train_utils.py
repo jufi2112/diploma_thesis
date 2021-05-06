@@ -22,6 +22,9 @@ import torchvision.transforms as transforms
 # Import AutoDL Nasbench-201 functions for data loading
 from lib.datasets.get_dataset_with_transform import get_datasets, get_nas_search_loaders
 
+from collections import namedtuple
+from genotypes_to_visualize import Genotype
+
 
 class AvgrageMeter(object):
     def __init__(self):
@@ -297,12 +300,12 @@ def create_cifar10_data_queues_own(args, evaluation_mode=False):
                     search.train_portion_bi_level in method_eedarts_space_pcdarts.yaml
         
     Returns:
-        int, (DataLoader, DataLoader), DataLoader, DataLoader, (int, int, int): Number of classes, tuple that contains
-            two data loaders for the same training data, the validation dataset, test dataset as well as a tuple that
-            contains the number of training, validation and test images.
-            During evaluation or when using bi-level search, the second entry in the tuple of training data will be
-            None. During single-level search, this second train dataset is provided.
-
+        int: Number of classes.
+        (DataLoader, DataLoader): Tuple that contains two data loaders for the same training data.
+            Second data loader is None during bi-level search or when evaluation mode is true.
+        DataLoader: The validation dataset.
+        DataLoader: The test dataset.
+        (int, int, int): Tuple that contains the number of training, validation and test images.
     """
     if "nas-bench-201" in args.search.search_space:
         raise ValueError("This function is not designed for NAS-Bench-201, use create_data_queues() instead. (Care different meaning of validation set though)")
@@ -521,7 +524,7 @@ def save(
     save_history=False,
     s3_bucket=None,
     runtime=0.0,
-    best_accuracies=None
+    best_observed=None
 ):
     """
     Create checkpoint and save to directory.
@@ -536,7 +539,7 @@ def save(
         architect: architect object with its own get_save_states method
         s3_bucket: s3 bucket name for saving to AWS s3
         runtime (float): Current runtime of the method as given by timeit.timer
-        best_accuracies (dict): Dictionary that keeps track of the currently best observed genotype and its properties
+        best_observed (dict): Dictionary that keeps track of the currently best observed genotype and its properties
     """
 
     checkpoint = {
@@ -550,13 +553,13 @@ def save(
     if architect is not None:
         checkpoint["architect"] = architect.get_save_states()
 
-    if best_accuracies is not None:
-        checkpoint['best_accuracies'] = {
-            'train': best_accuracies['train'],
-            'valid': best_accuracies['valid'],
-            'epoch': best_accuracies['epoch'],
-            'genotype_dict': best_accuracies['genotype_dict'],
-            'runtime': best_accuracies['runtime']
+    if best_observed is not None:
+        checkpoint['best_observed'] = {
+            'train': best_observed['train'],
+            'valid': best_observed['valid'],
+            'epoch': best_observed['epoch'],
+            'genotype_dict': best_observed['genotype_dict'],
+            'runtime': best_observed['runtime']
         }
 
     ckpt = os.path.join(folder, "model.ckpt")
@@ -618,20 +621,21 @@ def load(folder, rng_seed, model, optimizer, architect=None, s3_bucket=None):
     model.load_states(checkpoint["model"])
     optimizer.load_state_dict(checkpoint["optimizer"])
     if "runtime" in checkpoint.keys():
-        runtime = checkpoint["runtime"])
+        runtime = checkpoint["runtime"]
     else:
         runtime = 0
-    if "best_accuracies" in checkpoint.keys():
-        best_accuracies = checkpoint["best_accuracies"]
+    if "best_observed" in checkpoint.keys():
+        best_observed = checkpoint["best_observed"]
+        best_observed["genotype_raw"] = dict_to_genotype(best_observed["genotype_dict"])
     else:
-        best_accuracies = None
+        best_observed = None
     if architect is not None:
         architect.load_states(checkpoint["architect"])
 
     logging.info(f"Resumed model trained for {epochs} epochs")
     logging.info(f"Resumed model trained for {timedelta(seconds=runtime)} hh:mm:ss")
 
-    return epochs, history, runtime, best_accuracies
+    return epochs, history, runtime, best_observed
 
 
 def infer(valid_queue, model, criterion, report_freq=50, discrete=False):
@@ -686,3 +690,39 @@ def create_exp_dir(path):
     if not os.path.exists(path):
         os.mkdir(path)
     print("Experiment dir : {}".format(path))
+
+
+def genotype_to_dict(genotype: namedtuple):
+    """Converts the given genotype to a dictionary that can be serialized.
+    Inverse operation to dict_to_genotype().
+
+    Args:
+        genotype (namedtuple): The genotype that should be converted.
+
+    Returns:
+        dict: The converted genotype.
+    """
+    genotype_dict = genotype._asdict()
+    for key, val in genotype_dict.items():
+        if type(val) == range:
+            genotype_dict[key] = [node for node in val]
+    return genotype_dict
+
+
+def dict_to_genotype(genotype_dict: dict):
+    """Converts the given dict to a genotype.
+    Inverse operation to genotype_to_dict().
+
+    Args:
+        genotype_dict (dict): A genotype represented as dict.
+
+    Returns:
+        namedtuple: The dict converted to a genotype.
+    """
+    genotype = Genotype(
+        normal=genotype_dict['normal'],
+        normal_concat=genotype_dict['normal_concat'],
+        reduce=genotype_dict['reduce'],
+        reduce_concat=genotype_dict['reduce_concat']
+    )
+    return genotype

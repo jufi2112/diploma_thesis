@@ -23,7 +23,8 @@ import visualize
 from genotypes_to_visualize import Genotype
 
 from architect.architect_edarts import ArchitectEDARTS as Architect
-from search_spaces.pc_darts.model_search import PCDARTSNetwork as Network
+from search_spaces.pc_darts.model_search import PCDARTSNetwork  # Network for search
+from search_spaces.darts.model import NetworkCIFAR              # Network for evaluation
 
 @hydra.main(config_path="../configs/experiments_da/experiments_da.yaml", strict=False)
 def main(args):
@@ -51,11 +52,120 @@ def main(args):
 
 
 
+def evaluation_phase(args, genotype_init_channels, genotype_to_evaluate):
+    """Fully trains a provided genotype
+    Code is mostly copied from train_final.py but modified to work for my experiments.
+
+    Args:
+        args: Arguments
+        genotype_init_channels (int): Initial number of channels the genotype was searched with.
+            Gets used as ID for different evaluation runs.
+        genotype_to_evaluate (Genotype or str): Genotype that should be evaluated.
+            A string is interpreted as path to a json file that contains the genotype that should be evaluated.
+
+    Returns:
+        float: Train accuracy.
+        float: Validation accuracy.
+        float: Test accuracy.
+        float: Overall training time in seconds.
+    """
+    # Create folder structure
+    base_dir = os.path.join(os.getcwd(), "evaluation_phase_seed_" + str(args.run.seed))
+    log_dir = os.path.join(base_dir, "logs")
+    tensorboard_dir = os.path.join(base_dir, "tensorboard")
+    checkpoint_dir = os.path.join(base_dir, "checkpoints", "checkpoint_init_channels_" + str(genotype_init_channels))
+
+    # Log file for the current evaluation phase
+    logfile = os.path.join(log_dir, "log_init_channels_" + str(genotype_init_channels) + ".txt")
+    train_utils.set_up_logging(logfile)
+
+    logging.info(f"Hyperparameters: \n{args.pretty()}")
+
+    # Tensorboard SummaryWriter setup
+    tensorboard_writer_dir = os.path.join(tensorboard_dir, "init_channels_" + str(genotype_init_channels))
+    writer = SummaryWriter(tensorboard_writer_dir)
+
+    if not torch.cuda.is_available():
+        logging.error("No GPU device available!")
+        sys.exit(-1)
+    torch.cuda.set_device(args.run.gpu)
+
+    # Set random seeds for random, numpy, torch and cuda
+    rng_seed = train_utils.RNGSeed(args.run.seed)
+
+    criterion = nn.CrossEntropyLoss()
+    criterion = criterion.cuda()
+
+    # Load datasets
+    num_classes, (train_queue, _), valid_queue, test_queue, (num_train, num_valid, num_test) = train_utils.create_cifar10_data_queues_own(
+        args, eval_split=True
+    )
+
+    logging.info(f"Dataset: {args.run.dataset}")
+    logging.info(f"Number of classes: {num_classes}")
+    logging.info(f"Number of training images: {number_train}")
+    logging.info(f"Number of validation images: {number_valid}")
+    logging.info(f"Number of test images: {number_test}")
+
+    # Load genotype
+    if type(genotype_to_evaluate) == str:
+        try:
+            with open(genotype_to_evaluate) as genotype_file:
+                genotype_dict = json.load(genotype_file)
+            genotype_to_evaluate = train_utils.dict_to_genotype(genotype_dict)
+        except Exception as e:
+            logging.error(f"Error while trying to load genotype from the provided file: \n{e}")
+            return # TODO: how should errors be returned?
+
+    # Visualize genotype
+    genotype_graph_normal = visualize.plot(genotype_to_evaluate.normal, "", return_type="graph", output_format="png")
+    binary_normal = genotype_graph_normal.pipe()
+    stream_normal = io.BytesIO(binary_normal)
+    graph_normal = np.array(PIL.Image.open(stream_normal).convert("RGB"))
+    writer.add_image("Normal_Cell", graph_normal, dataformats="HWC")
+    genotype_graph_reduce = visualize.plot(genotype_to_evaluate.reduce, "", return_type="graph", output_format="png")
+    binary_reduce = genotype_graph_reduce.pipe()
+    stream_reduce = io.BytesIO(binary_reduce)
+    graph_reduce = np.array(PIL.Image.open(stream_reduce).convert("RGB"))
+    writer.add_image("Reduce_Cell", graph_reduce, dataformats="HWC")
+    del genotype_graph_normal
+    del binary_normal
+    del stream_normal
+    del graph_normal
+    del genotype_graph_reduce
+    del binary_reduce
+    del stream_reduce
+    del graph_reduce
+
+    model = NetworkCIFAR(
+        args.train.init_channels,
+        num_classes,
+        args.train.layers,
+        args.train.auxiliary,
+        genotype_to_evaluate
+    )
+    model = model.cuda()
+
+    logging.info(f"Size of model parameters: {train_utils.count_parameters_in_MB(model)} MB")
+    total_params = sum(x.data.nelement() for x in model.parameters())
+    logging.info(f"Total parameters of model: {total_params}")
+
+    optimizer, scheduler = train_utils.setup_optimizer(model, args)
+
+    # Check if we've already trained
+    
+
+    logging.info(f"Evaluation phase started for genotype: \n{genotype_to_evaluate")
+
+    # before return, remove logging filehandler of current logfile, so that the following logs aren't written in the current log
+    logging.getLogger().removeHandler(logging.getLogger().handlers[-1])
+    return # TODO
+
+
+
 def search_phase(args):
     """Performs NAS
-    Code is mostly copied from train_search.py but modified to only work with GAEA PC-DARTS
-
-
+    Code is mostly copied from train_search.py but modified to only work with GAEA PC-DARTS.
 
     Returns:
         Genotype: Best found genotype.
@@ -83,12 +193,12 @@ def search_phase(args):
     # Setup SummaryWriters
     summary_writer_dir = os.path.join(summary_dir, "init_channels_" + str(args.train.init_channels))
     tensorboard_writer_dir = os.path.join(tensorboard_dir, "init_channels_" + str(args.train.init_channels))
-    writer = SummaryWriter(summary_dir)
+    writer = SummaryWriter(summary_writer_dir)
     # own writer that I use to keep track of interesting variables
-    own_writer = SummaryWriter(tensorboard_dir)
+    own_writer = SummaryWriter(tensorboard_writer_dir)
 
     if not torch.cuda.is_available():
-        logging.info("No GPU device available")
+        logging.error("No GPU device available")
         sys.exit(-1)
     torch.cuda.set_device(args.run.gpu)
 
@@ -100,6 +210,7 @@ def search_phase(args):
     else:
         criterion = nn.CrossEntropyLoss()
 
+    # if single-level, train_2_queue points to the training data. During bi-level search, train_2_queue will be None and we'll use valid_queue for search
     num_classes, (train_queue, train_2_queue), valid_queue, test_queue, (number_train, number_valid, number_test) = train_utils.create_cifar10_data_queues_own(args)
 
     logging.info(f"Dataset: {args.run.dataset}")
@@ -112,7 +223,7 @@ def search_phase(args):
     logging.info(f"Number of test images (unused during search): {number_test}")
 
     # Create model
-    model = Network(
+    model = PCDARTSNetwork(
         args.train.init_channels,
         num_classes,
         args.search.nodes,
@@ -135,7 +246,7 @@ def search_phase(args):
 
     # Try to load previous checkpoint
     try:
-        start_epochs, history, previous_runtime, best_accuracies = train_utils.load(
+        start_epochs, history, previous_runtime, best_observed = train_utils.load(
             checkpoint_dir,
             rng_seed,
             model,
@@ -144,8 +255,8 @@ def search_phase(args):
             args.run.s3_bucket
         )
         scheduler.last_epoch = start_epochs - 1
-        if best_accuracies is None:
-            best_accuracies = {
+        if best_observed is None:
+            best_observed = {
                 "train": 0.0,           # for single-level search, used to keep track of best genotype
                 "valid": 0.0,           # for bi-level search, used to keep track of best genotype
                 "epoch": 0,             # epoch the best accuracy was observed
@@ -153,15 +264,13 @@ def search_phase(args):
                 "genotype_dict": None,  # best genotype stored as dict (for serialization)
                 "runtime": 0.0          # runtime after which the best genotype was found
             }
-        else:
-            best_accuracies['genotype_raw'] = _dict_to_genotype(best_accuracies['genotype_dict'])
-        logging.info("Resumed training from a previous checkpoint.")
+        logging.info("Resumed search from a previous checkpoint.")
     except Exception as e:
         logging.info(e)
         start_epochs = 0
         previous_runtime = 0
 
-        best_accuracies = {
+        best_observed = {
             "train": 0.0,           # for single-level search, used to keep track of best genotype
             "valid": 0.0,           # for bi-level search, used to keep track of best genotype
             "epoch": 0,             # epoch the best accuracy was observed
@@ -170,6 +279,8 @@ def search_phase(args):
             "runtime": 0.0          # runtime after which the best genotype was found
         }
     
+    logging.info("Search phase started")
+
     train_start_time = timer()
     
     overall_visualization_time = 0      # don't count visualization into runtime
@@ -249,13 +360,13 @@ def search_phase(args):
         own_writer.add_scalar('Top5/valid', valid_top5, epoch)
         logging.info(f"| valid_acc: {valid_acc} |")
 
-        if (args.search.single_level and train_acc > best_accuracies['train']) or (not args.search.single_level and valid_acc > best_accuracies['valid']):
-                best_accuracies['train'] = train_acc
-                best_accuracies['valid'] = valid_acc
-                best_accuracies['epoch'] = epoch
-                best_accuracies['genotype_raw'] = genotype
-                best_accuracies['genotype_dict'] = _genotype_to_dict(genotype)
-                best_accuracies['runtime'] = timer() - train_start_time - overall_visualization_time + previous_runtime
+        if (args.search.single_level and train_acc > best_observed['train']) or (not args.search.single_level and valid_acc > best_observed['valid']):
+                best_observed['train'] = train_acc
+                best_observed['valid'] = valid_acc
+                best_observed['epoch'] = epoch
+                best_observed['genotype_raw'] = genotype
+                best_observed['genotype_dict'] = train_utils.genotype_to_dict(genotype)
+                best_observed['runtime'] = timer() - train_start_time - overall_visualization_time + previous_runtime
 
         # Save checkpoint of this epoch
         train_utils.save(
@@ -268,7 +379,7 @@ def search_phase(args):
             save_history=True,
             s3_bucket=args.run.s3_bucket,
             runtime=(timer()-train_start_time - overall_visualization_time + previous_runtime),
-            best_accuracies=best_accuracies
+            best_observed=best_observed
         )
 
         scheduler.step()
@@ -280,65 +391,33 @@ def search_phase(args):
     logging.info(f"Training finished after {timedelta(seconds=overall_runtime)}(hh:mm:ss).")
 
     if args.search.single_level:
-        logging.info((
-            f"\nBest genotype according to training accuracy found in epoch {best_accuracies["epoch"]} after "
-            f"{timedelta(seconds=best_accuracies['runtime'])} hh:mm:ss"
-        ))
+        logging.info(
+            (
+                f"\nBest genotype according to training accuracy found in epoch {best_observed['epoch']} after "
+                f"{timedelta(seconds=best_observed['runtime'])} hh:mm:ss"
+            )
+        )
     else:
-        logging.info((
-            f"\nBest genotype according to validation accuracy found in epoch {best_accuracies["epoch"]} after "
-            f"{timedelta(seconds=best_accuracies['runtime'])} hh:mm:ss"
-        ))
-    logging.info(f"Train accuracy: {best_accuracies['train']}")
-    logging.info(f"Valid accuracy: {best_accuracies['valid']}")
-    logging.info(f"Genotype: {best_accuracies['genotype_raw']}")
+        logging.info(
+            (
+                f"\nBest genotype according to validation accuracy found in epoch {best_observed['epoch']} after "
+                f"{timedelta(seconds=best_observed['runtime'])} hh:mm:ss"
+            )
+        )
+    logging.info(f"Train accuracy: {best_observed['train']}")
+    logging.info(f"Valid accuracy: {best_observed['valid']}")
+    logging.info(f"Genotype: {best_observed['genotype_raw']}")
 
     # dump best genotype to json file, so that we can load it during evaluation phase
     genotype_file_path = os.path.join(genotype_dir, "genotype_init_channels_" + str(args.train.init_channels) + ".json")
     with open(genotype_file_path, 'w') as genotype_file:
-        json.dump(best_accuracies['genotype_dict'], genotype_file, indent=4)
+        json.dump(best_observed['genotype_dict'], genotype_file, indent=4)
 
     logging.info(f"Search finished. Dumped best genotype into {genotype_file_path}")
 
-    # before return, remove logging filehandler, so that the following logs aren't written in the current log
+    # before return, remove logging filehandler of current logfile, so that the following logs aren't written in the current log
     logging.getLogger().removeHandler(logging.getLogger().handlers[-1])
-    return best_accuracies['genotype_raw'], best_accuracies['runtime'], best_accuracies['train'], best_accuracies['valid'], overall_runtime
-
-
-def _genotype_to_dict(genotype: namedtuple):
-    """Converts the given genotype to a dictionary that can be serialized.
-    Inverse operation to _dict_to_genotype().
-
-    Args:
-        genotype (namedtuple): The genotype that should be converted.
-
-    Returns:
-        dict: The converted genotype.
-    """
-    genotype_dict = genotype._asdict()
-    for key, val in genotype_dict.items():
-        if type(val) == range:
-            genotype_dict[key] = [node for node in val]
-    return genotype_dict
-
-
-def _dict_to_genotype(genotype_dict: dict):
-    """Converts the given dict to a genotype.
-    Inverse operation to _genotype_to_dict().
-
-    Args:
-        genotype_dict (dict): A genotype represented as dict.
-
-    Returns:
-        namedtuple: The dict converted to a genotype.
-    """
-    genotype = Genotype(
-        normal=genotype_dict['normal'],
-        normal_concat=genotype_dict['normal_concat'],
-        reduce=genotype_dict['reduce'],
-        reduce_concat=genotype_dict['reduce_concat']
-    )
-    return genotype
+    return best_observed['genotype_raw'], best_observed['runtime'], best_observed['train'], best_observed['valid'], overall_runtime
 
 
 def train_search_phase(

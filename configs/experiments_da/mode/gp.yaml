@@ -1,5 +1,6 @@
 ﻿method:
     name: "gaussian_process"
+    mode: "sequential" # search_only, evaluate_only, sequential
 
 hydra:
     run:
