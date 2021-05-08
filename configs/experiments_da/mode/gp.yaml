@@ -1,6 +1,7 @@
 ﻿method:
-    name: "gaussian_process"
+    name: "gaussian_process" # used as directory name --> no invalid characters
     mode: "sequential" # search_only, evaluate_only, sequential
+    use_search_channels_for_evaluation: true    # use the same number of init_channels for search and evaluation
 
 hydra:
     run:

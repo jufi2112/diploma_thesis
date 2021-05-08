@@ -529,6 +529,8 @@ def save(
 ):
     """
     Create checkpoint and save to directory.
+    Overwriting of previous checkpoints is done atomic by first creating a
+        'buffer' file and then using os.replace. See also https://github.com/PyTorchLightning/pytorch-lightning/pull/689
     TODO: should remove s3 handling and have separate class for that.
 
     Args:
@@ -568,14 +570,21 @@ def save(
 
     # if you change path of model_best.ckpt, also change the return value of experiments_da.py.evaluation_phase()
     ckpt = os.path.join(folder, "model_best.ckpt") if best_eval else os.path.join(folder, "model.ckpt")
-    torch.save(checkpoint, ckpt)
+    # needed for atomic overwriting
+    ckpt_part = ckpt + ".part"
+    torch.save(checkpoint, ckpt_part)
+    os.replace(ckpt_part, ckpt)
+
 
     history = None
     if save_history:
         history_file = os.path.join(folder, "history.pkl")
+        history_file_part = history_file + ".part"
         history = architect.get_history()
-        with open(history_file, "wb") as f:
+        with open(history_file_part, "wb") as f:
             pickle.dump(history, f)
+        # atomic replace
+        os.replace(history_file_part, history_file)
 
     if s3_bucket is not None:
         log = os.path.join(folder, "log.txt")
@@ -663,8 +672,8 @@ def load(
     if architect is not None:
         architect.load_states(checkpoint["architect"])
 
-    logging.info(f"Resumed model trained for {epochs} epochs")
-    logging.info(f"Resumed model trained for {timedelta(seconds=runtime)} hh:mm:ss")
+    #logging.info(f"Resumed model trained for {epochs} epochs")
+    #logging.info(f"Resumed model trained for {timedelta(seconds=runtime)} hh:mm:ss")
 
     return epochs, history, runtime, best_observed
 
@@ -759,3 +768,44 @@ def dict_to_genotype(genotype_dict: dict):
         reduce_concat=genotype_dict['reduce_concat']
     )
     return genotype
+
+
+def save_outer_loop_checkpoint(folder, history: dict, overall_runtime: float):
+    """Saves a checkpoint of the given outer loop history into the provided folder.
+    Saving is done in an atomic way by first creating a .part file which is then
+    renamed with os.replace().
+
+    Args:
+        folder (str): Directory in which to save the checkpoint.
+        history: History that should be saved. Needs to be serializable by
+            torch.save() function
+        overall_runtime (float): Runtime of the given history in seconds.
+    """
+    checkpoint = {
+        'history': history,
+        'runtime': runtime
+    }
+    ckpt = os.path.join(folder, 'outer_loop.ckpt')
+    ckpt_part = ckpt + ".part"
+    torch.save(checkpoint, ckpt_part)
+    os.replace(ckpt_part, ckpt)
+
+
+def load_outer_loop_checkpoint(folder):
+    """Loads the outer loop history checkpoint from the provided folder.
+
+    Args:
+        folder (str): Path to the folder that contains the search history checkpoint.
+
+    Returns:
+        dict: The outer loop history.
+        float: Overall runtime of the loaded outer loop in seconds.
+    """
+    ckpt = os.path.join(folder, 'outer_loop.ckpt')
+    checkpoint = torch.load(ckpt)
+
+    return checkpoint['history'], checkpoint['runtime']
+
+    
+
+    

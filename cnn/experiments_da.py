@@ -29,7 +29,7 @@ from search_spaces.darts.model import NetworkCIFAR              # Network for ev
 @hydra.main(config_path="../configs/experiments_da/experiments_da.yaml", strict=False)
 def main(args):
     """Performs either grid search over init_channels or employs a Gaussian process to search the best value for init_channels.
-    Gaussian process is not implemented yet (tm)
+    Gaussian process is not implemented, yet (tm)
     """
     np.set_printoptions(precision=3)
 
@@ -42,14 +42,110 @@ def main(args):
 
     sys.exit(-1)
 
+    # The overall directory (based on method.name) is set up by hydra
+    # base directories for search and evaluation phases
+    base_dir_search = os.path.join(os.getcwd(), "search_phase_seed_" + str(args.run_search_phase.seed))
+    base_dir_evaluation = os.path.join(os.getcwd(), "evaluation_phase_seed_" + str(args.run_eval_phase.seed))
+
     if args.method.name == 'grid_search':
-        # grid search mode
+
+        logging.info(f"Starting grid search with mode: {args.method.mode}")
+
+        grid_search_start_time = timer()
+        
+        if args.method.mode in ["search_only", "sequential"]:
+            os.makedirs(base_dir_search, exist_ok=True)
+            if args.method.mode == "sequential":
+                os.makedirs(base_dir_evaluation, exist_ok=True)
+
+            # try to load previous checkpoint
+            try:
+                search_history, previous_runtime = train_utils.load_outer_loop_checkpoint(base_dir_search)
+                logging.info(f"Resumed previous outer loop search which already ran for {timedelta(seconds=previous_runtime)} hh:mm:ss")
+                if args.method.mode == "sequential":
+                    eval_history, 
+            except Exception as e:
+                logging.info(e)
+                search_history = {}
+                previous_runtime = 0.0
+
+            # grid search loop
+            for step, current_init_channels in enumerate(args.method.init_channels_to_check):
+                logging.info(f"| Step {step:3d} / {len(args.method.init_channels_to_check)} |")
+                # check if it already exists in search_history (would mean we already searched it)
+                if not current_init_channels in search_history.keys():
+                    logging.info(f"init_channels={current_init_channels} not yet seen. Starting single search phase...")
+                    # perform search, load correct run and train configuration
+                    args.run = args.run_search_phase
+                    args.train = args.train_search_phase
+                    # set init_channels that should be searched with
+                    args.train.init_channels = current_init_channels    
+                    (
+                        best_genotype,
+                        best_genotype_search_time,
+                        search_train_acc,
+                        search_valid_acc,
+                        overall_search_time
+                    ) = search_phase(args, base_dir_search)
+
+                    logging.info(f"Single search finished after a total of {timedelta(seconds=overall_search_time)} hh:mm:ss")
+
+                    # write to history
+                    search_history[current_init_channels] = {
+                        'best_genotype': best_genotype,
+                        'best_genotype_search_time': best_genotype_search_time,
+                        'search_train_acc': search_train_acc,
+                        'search_valid_acc': search_valid_acc,
+                        'overall_search_time': overall_search_time
+                    }
+
+                    train_utils.save_outer_loop_checkpoint(
+                        base_dir_search, 
+                        search_history,
+                        timer() - grid_search_start_time + previous_runtime
+                    )
+                else:
+                    logging.info(f"init_channels={current_init_channels} already in search history. Skipping...")
+
+                if args.method.mode == "search_only":
+                    continue
+
+                # try to load evaluation history
+                #try:
+
+
+                # evaluate the obtained genotype
+                args.run = args.run_eval_phase
+                args.train = args.train_eval_phase
+                # set init_channels that should be trained with
+                args.train.init_channels = current_init_channels
+                (
+                    checkpoints_best_weights,
+                    best_weights_runtime,
+                    best_weights_train_acc,
+                    best_weights_valid_acc,
+                    overall_runtime
+                ) = evaluation_phase(
+                    args,
+                    base_dir_evaluation,
+                    current_init_channels,
+                    search_history[current_init_channels]['best_genotype']
+                )
+
+
+
+
+
+
+
+
+
         
 
 
     # prepare for search phase
-    args.run = args.run_search_phase
-    args.train = args.train_search_phase
+    #args.run = args.run_search_phase
+    #args.train = args.train_search_phase
 
     #logging.info("Search phase")
     #args.train = args.train_search
@@ -60,15 +156,159 @@ def main(args):
 
 
 
-def evaluation_phase(args, genotype_init_channels, genotype_to_evaluate):
+def grid_search(args):
+    """Performs grid search
+
+    Args:
+        args (OmegaConf): Arguments
+    """
+    cwd = os.getcwd()
+    log = os.path.join(cwd, "log_grid_search.txt")
+    train_utils.set_up_logging(log)
+
+    logging.info(f"Hyperparameters: \n{args.pretty()}")
+
+    # overall directory (cwd) is set up by hydra
+    # base directories for search and evaluation phases
+    base_dir_search = os.path.join(cwd, "search_phase_seed_" + str(args.run_search_phase.seed))
+    base_dir_eval = os.path.join(cwd, "evaluation_phase_seed_" + str(args.run_eval_phase.seed))
+
+    logging.info(f"Starting grid search with mode: {args.method.mode}")
+
+    overall_runtime_search_phase = 0.0  # measures the time spend search
+    overall_runtime_eval_phase = 0.0    # measures the time spend evaluating
+
+    # can have mode 'search_only'   - perform only search phase
+    #               'evaluate_only' - perform only evaluation phase
+    #               'sequential'    - perform search phase followed by evaluation phase
+    if args.method.mode in ["search_only", "sequential"]:
+        # Create base folders if they don't exist
+        os.makedirs(base_dir_search, exist_ok=True)
+        if args.method.mode == "sequential":
+            os.makedirs(base_dir_eval, exist_ok=True)
+
+        # try to load previous grid search checkpoints (search phase and, if needed, evaluation phase)
+        try:
+            search_history, previous_runtime_search_phase = train_utils.load_outer_loop_checkpoint(base_dir_search)
+            overall_runtime_search_phase += previous_runtime_search_phase
+            logging.info(f"Resumed previous grid search search phase checkpoint which already ran for {timedelta(seconds=previous_runtime_search_phase)} hh:mm:ss.")
+        except Exception as e:
+            logging.info(e)
+            logging.info("Starting search phase from scratch.")
+            search_history = {}
+
+        if args.method.mode == "sequential":
+            try:
+                eval_history, previous_runtime_eval_phase = train_utils.load_outer_loop_checkpoint(base_dir_eval)
+                overall_runtime_eval_phase += previous_runtime_eval_phase
+                logging.info(f"Resumed previous grid search evaluation phase checkpoint which already ran for {timedelta(seconds=previous_runtime_eval_phase)} hh:mm:ss.")
+            except Exception as e:
+                logging.info(e)
+                logging.info("Starting evaluation phase from scratch.")
+                eval_history = {}
+
+        # grid search loop
+        for step, current_init_channels in enumerate(args.method.init_channels_to_check):
+            logging.info(f"| Step {step:3d} / {len(args.method.init_channels_to_check)} |")
+            # check if it already exists in search_history (would mean we already performed search for it)
+            if current_init_channels in search_history.keys():
+                logging.info(f"init_channels={current_init_channels} already in search history. Skipping...")
+            else:
+                logging.info(f"init_channels={current_init_channels} not yet seen. Starting single search phase...")
+                # load correct run and train configuration
+                args.run = args.run_search_phase
+                args.train = args.train_search_phase
+                # set init_channels that should be utilized for search
+                args.train.init_channels = current_init_channels
+                (
+                    best_genotype,
+                    best_genotype_search_time,
+                    search_train_acc,
+                    search_valid_acc,
+                    single_search_time
+                ) = search_phase(args, base_dir_search)
+
+                logging.info(f"Single search finished after a total of {timedelta(seconds=single_search_time)} hh:mm:ss")
+                overall_runtime_search_phase += single_search_time
+
+                # write to history
+                search_history[current_init_channels] = {
+                    'best_genotype': best_genotype,
+                    'best_genotype_search_time': best_genotype_search_time,
+                    'search_train_acc': search_train_acc,
+                    'search_valid_acc': search_valid_acc,
+                    'overall_search_time': single_search_time
+                }
+
+                # save checkpoint
+                train_utils.save_outer_loop_checkpoint(
+                    base_dir_search,
+                    search_history,
+                    overall_runtime_search_phase
+                )
+
+            if args.method.mode == "search_only":
+                continue
+
+            # evaluate the obtained genotype
+            if current_init_channels in eval_history.keys():
+                logging.info(f"init_channels={current_init_channels} already in evaluation history. Skipping...")
+            else:
+                logging.info(f"init_channels={current_init_channels} not yet seen. Starting evaluation phase...")
+                # load correct run and train configuration
+                args.run = args.run_eval_phase
+                args.train = args.train_eval_phase
+                if args.method.use_search_channels_for_evaluation:
+                    args.train.init_channels = current_init_channels
+                
+                (
+                    checkpoint_path,
+                    best_weights_train_time,
+                    best_weights_train_acc,
+                    best_weights_valid_acc,
+                    single_training_time
+                ) = evaluation_phase(
+                    args,
+                    base_dir_eval,
+                    current_init_channels,
+                    search_history[current_init_channels]['best_genotype']
+                )
+
+                logging.info(f"Evaluation of genotype finished after a total of {timedelta(seconds=single_training_time)} hh:mm:ss.")
+                overall_runtime_eval_phase += single_training_time
+
+                # write to history
+                eval_history[current_init_channels] = {
+                    'checkpoint_path': checkpoint_path,
+                    'best_weights_train_time': best_weights_train_time,
+                    'train_acc': best_weights_train_acc,
+                    'valid_acc': best_weights_valid_acc,
+                    'overall_eval_time': single_training_time
+                }
+
+                # save checkpoint
+                train_utils.save_outer_loop_checkpoint(
+                    base_dir_eval,
+                    eval_history,
+                    overall_runtime_eval_phase
+                )
+            
+        # end of loop
+
+
+
+
+def evaluation_phase(args, base_dir, genotype_init_channels, genotype_to_evaluate):
     """Fully trains a provided genotype
     Code is mostly copied from train_final.py but modified to work for my experiments.
     Best weights are selected according to validation accuracy.
 
     Args:
-        args: Arguments
+        args (OmegaConf): Arguments
+        base_dir (str): Path to the base directory the evaluation phase should work in.
         genotype_init_channels (int): Initial number of channels the genotype was searched with.
             Gets used as ID for different evaluation runs.
+            This does NOT influence init_channels for evaluation phase, this is controlled via args.train.init_channels!
         genotype_to_evaluate (Genotype or str): Genotype that should be evaluated.
             A string is interpreted as path to a json file that contains the genotype that should be evaluated.
 
@@ -80,7 +320,7 @@ def evaluation_phase(args, genotype_init_channels, genotype_to_evaluate):
         float: Overall training time in seconds.
     """
     # Create folder structure
-    base_dir = os.path.join(os.getcwd(), "evaluation_phase_seed_" + str(args.run.seed))
+    #base_dir = os.path.join(os.getcwd(), "evaluation_phase_seed_" + str(args.run.seed))
     log_dir = os.path.join(base_dir, "logs")
     tensorboard_dir = os.path.join(base_dir, "tensorboard")
     checkpoint_dir = os.path.join(base_dir, "checkpoints", "checkpoint_init_channels_" + str(genotype_init_channels))
@@ -178,7 +418,12 @@ def evaluation_phase(args, genotype_init_channels, genotype_to_evaluate):
                 "runtime": 0.0          # runtime after which the best epoch was observed
             }
         scheduler.last_epoch = start_epochs - 1
-        logging.info(f"Resumed training from a previous checkpoint which already ran for {timedelta(seconds=previous_runtime)} hh:mm:ss.")
+        logging.info(
+            (
+                f"Resumed training from a previous checkpoint which was already trained for {start_epochs} epochs and "
+                f"already ran for {timedelta(seconds=previous_runtime)} hh:mm:ss."
+            )
+        )
         logging.info("This is included in the final runtime report.")
     except Exception as e:
         logging.info(e)
@@ -281,11 +526,15 @@ def evaluation_phase(args, genotype_init_channels, genotype_to_evaluate):
     return os.path.join(checkpoint_dir, 'model_best.ckpt'), best_observed['runtime'], best_observed['train'], best_observed['valid'], overall_runtime
 
 
-def search_phase(args):
+def search_phase(args, base_dir):
     """Performs NAS
     Code is mostly copied from train_search.py but modified to only work with GAEA PC-DARTS.
     Best genotype is selected according to training accuracy for single-level search and according to validation
         accuracy for bi-level search.
+
+    Args:
+        args (OmegaConf): Arguments.
+        base_dir (str): Path to the base directory that the search phase should work in.
 
     Returns:
         Genotype: Best found genotype.
@@ -295,7 +544,7 @@ def search_phase(args):
         float: Overall runtime of the search phase in seconds.
     """
     # Create folder structure
-    base_dir = os.path.join(os.getcwd(), "search_phase_seed_" + str(args.run.seed))
+    #base_dir = os.path.join(os.getcwd(), "search_phase_seed_" + str(args.run.seed))
     log_dir = os.path.join(base_dir, "logs")
     summary_dir = os.path.join(base_dir, "summary")
     tensorboard_dir = os.path.join(base_dir, "tensorboard")
@@ -384,7 +633,12 @@ def search_phase(args):
                 "genotype_dict": None,  # best genotype stored as dict (for serialization)
                 "runtime": 0.0          # runtime after which the best genotype was found
             }
-        logging.info(f"Resumed search from a previous checkpoint which already ran for {timedelta(seconds=previous_runtime)} hh:mm:ss.")
+        logging.info(
+            (
+                f"Resumed training from a previous checkpoint which was already trained for {start_epochs} epochs and "
+                f"already ran for {timedelta(seconds=previous_runtime)} hh:mm:ss."
+            )
+        )
         logging.info("This is included in the final runtime report.")
     except Exception as e:
         logging.info(e)
