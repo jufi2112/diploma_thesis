@@ -524,7 +524,8 @@ def save(
     save_history=False,
     s3_bucket=None,
     runtime=0.0,
-    best_observed=None
+    best_observed=None,
+    best_eval=False
 ):
     """
     Create checkpoint and save to directory.
@@ -539,7 +540,10 @@ def save(
         architect: architect object with its own get_save_states method
         s3_bucket: s3 bucket name for saving to AWS s3
         runtime (float): Current runtime of the method as given by timeit.timer
-        best_observed (dict): Dictionary that keeps track of the currently best observed genotype and its properties
+        best_observed (dict): Dictionary that keeps track of the currently best observed genotype and its properties.
+            This is also used during evaluation (with genotype related values set to None).
+        best_eval (bool): Whether the checkpoint is created for the best currently observed weights during evaluation.
+            This means that the checkpoint is saved with a dedicated name (model_best.ckpt).
     """
 
     checkpoint = {
@@ -562,7 +566,8 @@ def save(
             'runtime': best_observed['runtime']
         }
 
-    ckpt = os.path.join(folder, "model.ckpt")
+    # if you change path of model_best.ckpt, also change the return value of experiments_da.py.evaluation_phase()
+    ckpt = os.path.join(folder, "model_best.ckpt") if best_eval else os.path.join(folder, "model.ckpt")
     torch.save(checkpoint, ckpt)
 
     history = None
@@ -572,9 +577,8 @@ def save(
         with open(history_file, "wb") as f:
             pickle.dump(history, f)
 
-    log = os.path.join(folder, "log.txt")
-
     if s3_bucket is not None:
+        log = os.path.join(folder, "log.txt")
         aws_utils.upload_to_s3(ckpt, s3_bucket, ckpt)
         aws_utils.upload_to_s3(log, s3_bucket, log)
         if history is not None:
@@ -587,8 +591,31 @@ def save(
         #            aws_utils.upload_to_s3(path, s3_bucket, path)
 
 
-def load(folder, rng_seed, model, optimizer, architect=None, s3_bucket=None):
+def load(
+    folder, 
+    rng_seed, 
+    model, 
+    optimizer, 
+    architect=None, 
+    s3_bucket=None,
+    best_eval=False
+):
     """Loads checkpoint
+
+    Args:
+        folder (str): Directory that contains the checkpoint which should be loaded.
+        rng_seed (RNGSeed): Random seed object that should get initialized from the checkpoint.
+            Reference is modified.
+        model: Model that should get initialized from the checkpoint.
+            Reference is modified.
+        optimizer: Optimizer that should get initialized from the checkpoint.
+            Reference is modified.
+        architect: Architectut that should get initialized from the checkpoint.
+            Reference is modified.
+        s3_bucket: AWS stuff. Unused.
+        best_eval (bool): Whether the best checkpoint from evaluation should be loaded.
+            This will search for a checkpoint called 'model_best.ckpt' instead of 'model.ckpt'.
+            If no such file is found, an error is raised.
 
     Returns:
         int: Epochs
@@ -597,7 +624,11 @@ def load(folder, rng_seed, model, optimizer, architect=None, s3_bucket=None):
         dict: Properties of the currently best observed genotype
     """
     # Try to download log and ckpt from s3 first to see if a ckpt exists.
-    ckpt = os.path.join(folder, "model.ckpt")
+    ckpt = os.path.join(folder, "model_best.ckpt") if best_eval else os.path.join(folder, "model.ckpt")
+
+    if not os.path.isfile(ckpt):
+        raise ValueError(f"No valid checkpoint file found: {ckpt}")
+
     history_file = os.path.join(folder, "history.pkl")
     history = {}
 
@@ -608,7 +639,7 @@ def load(folder, rng_seed, model, optimizer, architect=None, s3_bucket=None):
         except:
             logging.info("history.pkl not in s3 bucket")
 
-    if os.path.exists(history_file):
+    if os.path.exists(history_file) and architect is not None:
         with open(history_file, "rb") as f:
             history = pickle.load(f)
         # TODO: update architecture history
@@ -719,6 +750,8 @@ def dict_to_genotype(genotype_dict: dict):
     Returns:
         namedtuple: The dict converted to a genotype.
     """
+    if genotype_dict is None:
+        return None
     genotype = Genotype(
         normal=genotype_dict['normal'],
         normal_concat=genotype_dict['normal_concat'],

@@ -28,7 +28,9 @@ from search_spaces.darts.model import NetworkCIFAR              # Network for ev
 
 @hydra.main(config_path="../configs/experiments_da/experiments_da.yaml", strict=False)
 def main(args):
-    """Performs either grid search over init_channels or employs a Gaussian process to search the best value for init_channels"""
+    """Performs either grid search over init_channels or employs a Gaussian process to search the best value for init_channels.
+    Gaussian process is not implemented yet (tm)
+    """
     np.set_printoptions(precision=3)
 
     working_directory = os.getcwd()
@@ -36,8 +38,14 @@ def main(args):
     log = os.path.join(working_directory, "overall_log.txt")
     train_utils.set_up_logging(log)
 
-    logging.info("Hyperparameters:")
-    logging.info(args.pretty())
+    logging.info(f"Hyperparameters: \n{args.pretty()}")
+
+    sys.exit(-1)
+
+    if args.method.name == 'grid_search':
+        # grid search mode
+        
+
 
     # prepare for search phase
     args.run = args.run_search_phase
@@ -55,6 +63,7 @@ def main(args):
 def evaluation_phase(args, genotype_init_channels, genotype_to_evaluate):
     """Fully trains a provided genotype
     Code is mostly copied from train_final.py but modified to work for my experiments.
+    Best weights are selected according to validation accuracy.
 
     Args:
         args: Arguments
@@ -64,9 +73,10 @@ def evaluation_phase(args, genotype_init_channels, genotype_to_evaluate):
             A string is interpreted as path to a json file that contains the genotype that should be evaluated.
 
     Returns:
-        float: Train accuracy.
-        float: Validation accuracy.
-        float: Test accuracy.
+        str: Path to checkpoint that contains the best weights.
+        float: Runtime in seconds after which the best weights where found.
+        float: Train accuracy of best weights.
+        float: Validation accuracy of best weights.
         float: Overall training time in seconds.
     """
     # Create folder structure
@@ -137,6 +147,7 @@ def evaluation_phase(args, genotype_init_channels, genotype_to_evaluate):
     del stream_reduce
     del graph_reduce
 
+    # Create model
     model = NetworkCIFAR(
         args.train.init_channels,
         num_classes,
@@ -153,19 +164,128 @@ def evaluation_phase(args, genotype_init_channels, genotype_to_evaluate):
     optimizer, scheduler = train_utils.setup_optimizer(model, args)
 
     # Check if we've already trained
-    
+    try:
+        start_epochs, _, previous_runtime, best_observed = train_utils.load(
+            checkpoint_dir, rng_seed, model, optimizer, s3_bucket=None
+        )
+        if best_observed is None:
+            best_observed = {
+                "train": 0.0,           # train accuracy of best epoch
+                "valid": 0.0,           # validation accuracy of best epoch
+                "epoch": 0,             # epoch the best accuracy was observed
+                "genotype_raw": None,   # not used, but needs to be in the dict for compatibility with search phase
+                "genotype_dict": None,  # not used, but needs to be in the dict for compatibility with search phase
+                "runtime": 0.0          # runtime after which the best epoch was observed
+            }
+        scheduler.last_epoch = start_epochs - 1
+        logging.info(f"Resumed training from a previous checkpoint which already ran for {timedelta(seconds=previous_runtime)} hh:mm:ss.")
+        logging.info("This is included in the final runtime report.")
+    except Exception as e:
+        logging.info(e)
+        start_epochs = 0
+        previous_runtime = 0
 
-    logging.info(f"Evaluation phase started for genotype: \n{genotype_to_evaluate")
+        best_observed = {
+            "train": 0.0,           # train accuracy of best epoch
+            "valid": 0.0,           # validation accuracy of best epoch
+            "epoch": 0,             # epoch the best accuracy was observed
+            "genotype_raw": None,   # not used, but needs to be in the dict for compatibility with search phase
+            "genotype_dict": None,  # not used, but needs to be in the dict for compatibility with search phase
+            "runtime": 0.0          # runtime after which the best epoch was observed
+        }
 
+    logging.info(f"Evaluation phase started for genotype: \n{genotype_to_evaluate}")
+    logging.info(f"The genotype was searched with init_channels = {genotype_init_channels}")
+    train_start_time = timer()
+
+    # Train loop
+    for epoch in range(start_epochs, args.run.epochs):
+        logging.info(f"| Epoch: {epoch:4d}/{args.run.epochs} | lr: {scheduler.get_lr()[0]} |")
+        model.drop_path_prob = args.train.drop_path_prob * epoch / args.run.epochs
+
+        train_acc, train_obj, train_top5 = train_evaluation_phase(
+            args,
+            train_queue,
+            model,
+            criterion,
+            optimizer
+        )
+        logging.info(f"| train_acc: {train_acc} |")
+
+        valid_acc, valid_obj, valid_top5 = train_utils.infer(
+            valid_queue,
+            model,
+            criterion,
+            report_freq=args.run.report_freq
+        )
+        logging.info(f"| valid_acc: {valid_acc} |")
+
+        # Log values
+        writer.add_scalar("Loss/train", train_obj, epoch)
+        writer.add_scalar("Top1/train", train_acc, epoch)
+        writer.add_scalar("Top5/train", train_top5, epoch)
+        writer.add_scalar("lr", scheduler.get_lr()[0], epoch)
+        writer.add_scalar("Loss/valid", valid_obj, epoch)
+        writer.add_scalar("Top1/valid", valid_acc, epoch)
+        writer.add_scalar("Top5/valid", valid_top5, epoch)
+
+        # Use validation accuracy to determine if we have obtained new best weights
+        if valid_acc > best_observed['valid']:
+            best_observed['train'] = train_acc
+            best_observed['valid'] = valid_acc
+            best_observed['epoch'] = epoch
+            best_observed['runtime'] = timer() - train_start_time + previous_runtime
+
+            # best_eval=True indicates that we want to separately save this checkpoint, so that at the end, we can load
+            # the weights with the best performance according to validation data
+            train_utils.save(
+                checkpoint_dir,
+                epochs+1,
+                rng_seed,
+                model,
+                optimizer,
+                runtime=(timer() - train_start_time + previous_runtime),
+                best_observed=best_observed,
+                best_eval=True
+            )
+
+        # Save checkpoint for current epoch
+        train_utils.save(
+            checkpoint_dir,
+            epochs+1,
+            rng_seed,
+            model,
+            optimizer,
+            runtime=(timer() - training_start_time + previous_runtime),
+            best_observed=best_observed
+        )
+
+        scheduler.step()
+
+    train_end_time = timer()
+    overall_runtime = train_end_time - train_start_time + previous_runtime
+    logging.info(f"\nTraining finished after {timedelta(seconds=overall_runtime)} hh:mm:ss.")
+
+    logging.info(
+        (
+            f"Best weights according to validation accuracy found in epoch {best_observed['epoch']} after "
+            f"{timedelta(seconds=best_observed['runtime'])} hh:mm:ss."
+        )
+    )
+    logging.info(f"Train accuracy of best weights: {best_observed['train']} %")
+    logging.info(f"Validation accuracy of best weights: {best_observed['valid']} %")
+    logging.info(f"\nCheckpoint of best weights can be found in: {os.path.join(checkpoint_dir, 'model_best.ckpt')}")
+        
     # before return, remove logging filehandler of current logfile, so that the following logs aren't written in the current log
     logging.getLogger().removeHandler(logging.getLogger().handlers[-1])
-    return # TODO
-
+    return os.path.join(checkpoint_dir, 'model_best.ckpt'), best_observed['runtime'], best_observed['train'], best_observed['valid'], overall_runtime
 
 
 def search_phase(args):
     """Performs NAS
     Code is mostly copied from train_search.py but modified to only work with GAEA PC-DARTS.
+    Best genotype is selected according to training accuracy for single-level search and according to validation
+        accuracy for bi-level search.
 
     Returns:
         Genotype: Best found genotype.
@@ -264,7 +384,8 @@ def search_phase(args):
                 "genotype_dict": None,  # best genotype stored as dict (for serialization)
                 "runtime": 0.0          # runtime after which the best genotype was found
             }
-        logging.info("Resumed search from a previous checkpoint.")
+        logging.info(f"Resumed search from a previous checkpoint which already ran for {timedelta(seconds=previous_runtime)} hh:mm:ss.")
+        logging.info("This is included in the final runtime report.")
     except Exception as e:
         logging.info(e)
         start_epochs = 0
@@ -388,7 +509,7 @@ def search_phase(args):
     overall_runtime = train_end_time - train_start_time - overall_visualization_time + previous_runtime
     logging.info(f"Visualization of cells during search took a total of {timedelta(seconds=overall_visualization_time)} (hh:mm:ss).")
     logging.info(f"This time is not included in the runtime given below.\n")
-    logging.info(f"Training finished after {timedelta(seconds=overall_runtime)}(hh:mm:ss).")
+    logging.info(f"Training finished after {timedelta(seconds=overall_runtime)} hh:mm:ss.")
 
     if args.search.single_level:
         logging.info(
@@ -404,8 +525,8 @@ def search_phase(args):
                 f"{timedelta(seconds=best_observed['runtime'])} hh:mm:ss"
             )
         )
-    logging.info(f"Train accuracy: {best_observed['train']}")
-    logging.info(f"Valid accuracy: {best_observed['valid']}")
+    logging.info(f"Train accuracy: {best_observed['train']} %")
+    logging.info(f"Validation accuracy: {best_observed['valid']} %")
     logging.info(f"Genotype: {best_observed['genotype_raw']}")
 
     # dump best genotype to json file, so that we can load it during evaluation phase
@@ -444,6 +565,7 @@ def train_search_phase(
         model (nn.Module): The model that should be trained.
         architect (Architect): Architect that should be used to update architecture parameters.
         criterion (callable): Loss that should be utilized for weight updates.
+        optimizer: The optimizer that should be utilized for weight updates.
         lr (float): Current learning rate.
         random_arch (bool): Should a random architecture be returned.
             TODO: Might not work at the moment.
@@ -511,6 +633,62 @@ def train_search_phase(
 
         if step % args.run.report_freq == 0:
             logging.info(f"| Train | Batch: {step:3d} | Loss: {objs.avg:e} | Top1: {top1.avg} | Top5: {top5.avg} |")
+
+    return top1.avg, objs.avg, top5.avg
+
+
+def train_evaluation_phase(
+    args,
+    train_queue,
+    model,
+    criterion,
+    optimizer
+):
+    """Train routine for architecture evaluation phase.
+
+    Args:
+        args: Arguments
+        train_queue (torch.utils.DataLoader): Training dataset.
+        model (torch.nn.Module): The model that should be trained.
+        criterion (callable): Loss that should be used for weight updates.
+        optimizer: The optimizer that should be used for weight updates.
+
+    Returns:
+        float: Training accuracy.
+        float: Training loss.
+        float: Training top5 accuracy.
+    """
+    objs = train_utils.AvgrageMeter()
+    top1 = train_utils.AvgrageMeter()
+    top5 = train_utils.AvgrageMeter()
+
+    # set model to training mode
+    model.train()
+
+    for step, (data, target) in enumerate(train_queue):
+        data = Variable(data, requires_grad=False).cuda()
+        target = Variable(target, requires_grad=False).cuda()
+
+        optimizer.zero_grad()
+        logits, logits_aux = model(data)
+        loss = criterion(logits, target)
+
+        if args.train.auxiliary:
+            loss_aux = criterion(logits_aux, target)
+            loss += args.train.auxiliary_weight * loss_aux
+        
+        loss.backward()         # calculates dloss / dx for every parameter x
+        nn.utils.clip_grad_norm_(model.parameters(), args.train.grad_clip)
+        optimizer.step()        # performs gradient update for every x
+
+        prec1, prec5 = train_utils.accuracy(logits, target, topk=(1, 5))
+        batch_size = data.size(0)
+        objs.update(loss.item(), batch_size)
+        top1.update(prec1.item(), batch_size)
+        top5.update(prec5.item(), batch_size)
+
+        if step % args.run.report_freq == 0:
+            logging.info(f"| Batch: {step:3d} | Loss: {objs.avg:5f} | Top1: {top1.avg:3f} | Top5: {top5.avg:3f} |")
 
     return top1.avg, objs.avg, top5.avg
 
