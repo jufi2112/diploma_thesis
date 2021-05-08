@@ -161,6 +161,10 @@ def grid_search(args):
 
     Args:
         args (OmegaConf): Arguments
+
+    Returns:
+        dict: Search history.
+        dict: Evaluation history.
     """
     cwd = os.getcwd()
     log = os.path.join(cwd, "log_grid_search.txt")
@@ -209,7 +213,7 @@ def grid_search(args):
 
         # grid search loop
         for step, current_init_channels in enumerate(args.method.init_channels_to_check):
-            logging.info(f"| Step {step:3d} / {len(args.method.init_channels_to_check)} |")
+            logging.info(f"| Step {(step+1):3d} / {len(args.method.init_channels_to_check)} |")
             # check if it already exists in search_history (would mean we already performed search for it)
             if current_init_channels in search_history.keys():
                 logging.info(f"init_channels={current_init_channels} already in search history. Skipping...")
@@ -294,6 +298,12 @@ def grid_search(args):
                 )
             
         # end of loop
+        # TODO: remove log handler from logging
+        return search_history, eval_history
+    else:
+        # evaluate_only
+        
+
 
 
 
