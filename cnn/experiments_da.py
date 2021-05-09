@@ -40,119 +40,41 @@ def main(args):
 
     logging.info(f"Hyperparameters: \n{args.pretty()}")
 
-    sys.exit(-1)
+    if args.method.name == "grid_search":
+        (
+            search_history,
+            eval_history,
+            runtime_search_phase,
+            runtime_eval_phase
+        ) = grid_search(args)
 
-    # The overall directory (based on method.name) is set up by hydra
-    # base directories for search and evaluation phases
-    base_dir_search = os.path.join(os.getcwd(), "search_phase_seed_" + str(args.run_search_phase.seed))
-    base_dir_evaluation = os.path.join(os.getcwd(), "evaluation_phase_seed_" + str(args.run_eval_phase.seed))
+        if eval_history is not None:
+            # find best performing init_channels
+            best_init_channels = eval_history.keys()[0]
 
-    if args.method.name == 'grid_search':
+            encountered_errors = []
 
-        logging.info(f"Starting grid search with mode: {args.method.mode}")
-
-        grid_search_start_time = timer()
-        
-        if args.method.mode in ["search_only", "sequential"]:
-            os.makedirs(base_dir_search, exist_ok=True)
-            if args.method.mode == "sequential":
-                os.makedirs(base_dir_evaluation, exist_ok=True)
-
-            # try to load previous checkpoint
-            try:
-                search_history, previous_runtime = train_utils.load_outer_loop_checkpoint(base_dir_search)
-                logging.info(f"Resumed previous outer loop search which already ran for {timedelta(seconds=previous_runtime)} hh:mm:ss")
-                if args.method.mode == "sequential":
-                    eval_history, 
-            except Exception as e:
-                logging.info(e)
-                search_history = {}
-                previous_runtime = 0.0
-
-            # grid search loop
-            for step, current_init_channels in enumerate(args.method.init_channels_to_check):
-                logging.info(f"| Step {step:3d} / {len(args.method.init_channels_to_check)} |")
-                # check if it already exists in search_history (would mean we already searched it)
-                if not current_init_channels in search_history.keys():
-                    logging.info(f"init_channels={current_init_channels} not yet seen. Starting single search phase...")
-                    # perform search, load correct run and train configuration
-                    args.run = args.run_search_phase
-                    args.train = args.train_search_phase
-                    # set init_channels that should be searched with
-                    args.train.init_channels = current_init_channels    
-                    (
-                        best_genotype,
-                        best_genotype_search_time,
-                        search_train_acc,
-                        search_valid_acc,
-                        overall_search_time
-                    ) = search_phase(args, base_dir_search)
-
-                    logging.info(f"Single search finished after a total of {timedelta(seconds=overall_search_time)} hh:mm:ss")
-
-                    # write to history
-                    search_history[current_init_channels] = {
-                        'best_genotype': best_genotype,
-                        'best_genotype_search_time': best_genotype_search_time,
-                        'search_train_acc': search_train_acc,
-                        'search_valid_acc': search_valid_acc,
-                        'overall_search_time': overall_search_time
-                    }
-
-                    train_utils.save_outer_loop_checkpoint(
-                        base_dir_search, 
-                        search_history,
-                        timer() - grid_search_start_time + previous_runtime
-                    )
-                else:
-                    logging.info(f"init_channels={current_init_channels} already in search history. Skipping...")
-
-                if args.method.mode == "search_only":
+            for channels, values in eval_history.items():
+                if "search_error" in values.keys() or "eval_error" in values.keys():
+                    encountered_errors.append({
+                        'init_channels': channels,
+                        'error': 
+                    })
                     continue
+                if values['valid_acc'] > eval_history[best_init_channels]['valid_acc']:
+                    best_init_channels = channels
 
-                # try to load evaluation history
-                #try:
-
-
-                # evaluate the obtained genotype
-                args.run = args.run_eval_phase
-                args.train = args.train_eval_phase
-                # set init_channels that should be trained with
-                args.train.init_channels = current_init_channels
-                (
-                    checkpoints_best_weights,
-                    best_weights_runtime,
-                    best_weights_train_acc,
-                    best_weights_valid_acc,
-                    overall_runtime
-                ) = evaluation_phase(
-                    args,
-                    base_dir_evaluation,
-                    current_init_channels,
-                    search_history[current_init_channels]['best_genotype']
-                )
-
-
-
-
-
-
-
-
-
-        
-
-
-    # prepare for search phase
-    #args.run = args.run_search_phase
-    #args.train = args.train_search_phase
-
-    #logging.info("Search phase")
-    #args.train = args.train_search
-    #logging.info(args.pretty)
-    #logging.info("Eval phase")
-    #args.train = args.train_eval
-    #logging.info(args.pretty)
+            logging.info(f"Grid search finished after a total of {timedelta(seconds=(runtime_search_phase + runtime_eval_phase))} hh:mm:ss.")
+            logging.info(f"NAS took {timedelta(seconds=runtime_search_phase)} hh:mm:ss.")
+            logging.info(f"Evaluation of searched architectures took {timedelta(seconds=runtime_eval_phase)} hh:mm:ss.")
+        elif search_history is not None:
+            pass
+        else:
+            pass
+    elif args.method.name == "gaussian_process":
+        raise NotImplementedError('Gaussian process is currently not implemented.')
+    else:
+        raise ValueError("Unrecognized method.")
 
 
 
@@ -165,6 +87,8 @@ def grid_search(args):
     Returns:
         dict: Search history.
         dict: Evaluation history.
+        float: Overall runtime of the search phase in seconds.
+        float: Overall runtime of the evaluation phase in seconds.
     """
     cwd = os.getcwd()
     log = os.path.join(cwd, "log_grid_search.txt")
@@ -210,6 +134,8 @@ def grid_search(args):
                 logging.info(e)
                 logging.info("Starting evaluation phase from scratch.")
                 eval_history = {}
+        else:
+            eval_history = None
 
         # grid search loop
         for step, current_init_channels in enumerate(args.method.init_channels_to_check):
@@ -224,13 +150,39 @@ def grid_search(args):
                 args.train = args.train_search_phase
                 # set init_channels that should be utilized for search
                 args.train.init_channels = current_init_channels
-                (
-                    best_genotype,
-                    best_genotype_search_time,
-                    search_train_acc,
-                    search_valid_acc,
-                    single_search_time
-                ) = search_phase(args, base_dir_search)
+                try:
+                    (
+                        best_genotype,
+                        best_genotype_search_time,
+                        search_train_acc,
+                        search_valid_acc,
+                        single_search_time,
+                        max_mem_allocated_MB,
+                        max_mem_reserved_MB
+                    ) = search_phase(args, base_dir_search)
+                except Exception as e:
+                    logging.info(f"Encountered the following exception during search: {e}")
+                    logging.info("Continuing with next step")
+                    search_history[current_init_channels] = {
+                        'error': e
+                    }
+                    if eval_history is not None:
+                        if current_init_channels not in eval_history.keys():
+                            eval_history[current_init_channels] = {
+                                'search_error': e
+                            }
+                    # save checkpoint
+                    train_utils.save_outer_loop_checkpoint(
+                        base_dir_search,
+                        search_history,
+                        overall_runtime_search_phase
+                    )
+                    train_utils.save_outer_loop_checkpoint(
+                        base_dir_eval,
+                        eval_history,
+                        overall_runtime_eval_phase
+                    )
+                    continue
 
                 logging.info(f"Single search finished after a total of {timedelta(seconds=single_search_time)} hh:mm:ss")
                 overall_runtime_search_phase += single_search_time
@@ -241,7 +193,9 @@ def grid_search(args):
                     'best_genotype_search_time': best_genotype_search_time,
                     'search_train_acc': search_train_acc,
                     'search_valid_acc': search_valid_acc,
-                    'overall_search_time': single_search_time
+                    'overall_search_time': single_search_time,
+                    'max_mem_allocated_MB': max_mem_allocated_MB,
+                    'max_mem_reserved_MB': max_mem_reserved_MB
                 }
 
                 # save checkpoint
@@ -265,18 +219,34 @@ def grid_search(args):
                 if args.method.use_search_channels_for_evaluation:
                     args.train.init_channels = current_init_channels
                 
-                (
-                    checkpoint_path,
-                    best_weights_train_time,
-                    best_weights_train_acc,
-                    best_weights_valid_acc,
-                    single_training_time
-                ) = evaluation_phase(
-                    args,
-                    base_dir_eval,
-                    current_init_channels,
-                    search_history[current_init_channels]['best_genotype']
-                )
+                try:
+                    (
+                        checkpoint_path,
+                        best_weights_train_time,
+                        best_weights_train_acc,
+                        best_weights_valid_acc,
+                        single_training_time,
+                        max_mem_allocated_MB,
+                        max_mem_reserved_MB
+                    ) = evaluation_phase(
+                        args,
+                        base_dir_eval,
+                        current_init_channels,
+                        search_history[current_init_channels]['best_genotype']
+                    )
+                except Exception as e:
+                    logging.info(f"Encountered the following exception during evaluation: {e}")
+                    logging.info("Continuing with next step.")
+                    eval_history[current_init_channels] = {
+                        'eval_error': e
+                    }
+                    # save checkpoint
+                    train_utils.save_outer_loop_checkpoint(
+                        base_dir_eval,
+                        eval_history,
+                        overall_runtime_eval_phase
+                    )
+                    continue
 
                 logging.info(f"Evaluation of genotype finished after a total of {timedelta(seconds=single_training_time)} hh:mm:ss.")
                 overall_runtime_eval_phase += single_training_time
@@ -287,7 +257,9 @@ def grid_search(args):
                     'best_weights_train_time': best_weights_train_time,
                     'train_acc': best_weights_train_acc,
                     'valid_acc': best_weights_valid_acc,
-                    'overall_eval_time': single_training_time
+                    'overall_eval_time': single_training_time,
+                    'max_mem_allocated_MB': max_mem_allocated_MB,
+                    'max_mem_reserved_MB': max_mem_reserved_MB
                 }
 
                 # save checkpoint
@@ -298,14 +270,114 @@ def grid_search(args):
                 )
             
         # end of loop
-        # TODO: remove log handler from logging
-        return search_history, eval_history
+        # remove log handler from logging
+        logging.getLogger().removeHandler(logging.getLogger().handlers[-1])
+        return search_history, eval_history, overall_runtime_search_phase, overall_runtime_eval_phase
     else:
         # evaluate_only
-        
+        args.run = args.run_eval_phase
+        args.train = args.train_eval_phase
+        # try to load previous checkpoint of evaluation history
+        try:
+            eval_history, runtime_eval = train_utils.load_outer_loop_checkpoint(base_dir_eval)
+            overall_runtime_eval_phase += runtime_eval
+            logging.info(f"Resumed previous grid search evaluation phase checkpoint which already ran for {timedelta(seconds=runtime_eval)} hh:mm:ss.")
+        except:
+            logging.info(e)
+            logging.info("Starting evaluation phase from scratch.")
+            eval_history = {}
 
+        # try to load search history that should get evaluated
+        try:
+            search_history, runtime_search = train_utils.load_outer_loop_checkpoint(base_dir_search)
+            overall_runtime_search_phase += runtime_search
+            logging.info(f"Successfully loaded search history to evaluate.")
+        except Exception as e:
+            logging.info(e)
+            logging.info("Could not load search history. Please make sure that you have already performed the search phase. Aborting...")
+            search_history = None
+            return search_history, eval_history, overall_runtime_search_phase, overall_runtime_eval_phase
 
+        # evaluation loop
+        for step, current_init_channels in enumerate(search_history.keys()):
+            logging.info(f"| Step {(step+1)} / {len(search_history.keys())} |")
+            # check if it already exists in eval_history (would mean we already evaluated it)
+            if current_init_channels in eval_history.keys():
+                logging.info(f"init_channels={current_init_channels} already in evaluation history. Skipping...")
+                continue
+            
+            if "error" in search_history[current_init_channels].keys():
+                logging.info(f"The search history for init_channels={current_init_channels} contains the following error: {search_history[current_init_channels]['error']}")
+                logging.info(f"Skipping evaluation of this search result.")
+                eval_history[current_init_channels] = {
+                    'search_error': search_history[current_init_channels]['error']
+                }
+                # save checkpoint
+                train_utils.save_outer_loop_checkpoint(
+                    base_dir_eval,
+                    eval_history,
+                    overall_runtime_eval_phase
+                )
+                continue
 
+            logging.info(f"init_channels={current_init_channels} not yet evaluated. Starting evaluation...")
+            if args.method.use_search_channels_for_evaluation:
+                args.train.init_channels = current_init_channels
+            
+            try:
+                (
+                    checkpoint_path,
+                    best_weights_train_time,
+                    best_weights_train_acc,
+                    best_weights_valid_acc,
+                    single_training_time,
+                    max_mem_allocated_MB,
+                    max_mem_reserved_MB
+                ) = evaluation_phase(
+                    args,
+                    base_dir_eval,
+                    current_init_channels,
+                    search_history[current_init_channels]['best_genotype']
+                )
+            except Exception as e:
+                logging.info(f"Encountered the following exception during evaluation: {e}")
+                logging.info("Continuing with next step.")
+                eval_history[current_init_channels] = {
+                    'eval_error': e
+                }
+                # save checkpoint
+                train_utils.save_outer_loop_checkpoint(
+                    base_dir_eval,
+                    eval_history,
+                    overall_runtime_eval_phase
+                )
+                continue
+
+            logging.info(f"Evaluation of genotype finished after a total of {timedelta(seconds=single_training_time)} hh:mm:ss.")
+            overall_runtime_eval_phase += single_training_time
+
+            # write to history
+            eval_history[current_init_channels] = {
+                'checkpoint_path': checkpoint_path,
+                'best_weights_train_time': best_weights_train_time,
+                'train_acc': best_weights_train_acc,
+                'valid_acc': best_weights_valid_acc,
+                'overall_eval_time': single_training_time,
+                'max_mem_allocated_MB': max_mem_allocated_MB,
+                'max_mem_reserved_MB': max_mem_reserved_MB
+            }
+
+            # save checkpoint
+            train_utils.save_outer_loop_checkpoint(
+                base_dir_eval,
+                eval_history,
+                overall_runtime_eval_phase
+            )
+
+        # end of loop
+        # remove log handler from logging
+        logging.getLogger().removeHandler(logging.getLogger().handlers[-1])
+        return search_history, eval_history, overall_runtime_search_phase, overall_runtime_eval_phase
 
 
 def evaluation_phase(args, base_dir, genotype_init_channels, genotype_to_evaluate):
@@ -328,6 +400,8 @@ def evaluation_phase(args, base_dir, genotype_init_channels, genotype_to_evaluat
         float: Train accuracy of best weights.
         float: Validation accuracy of best weights.
         float: Overall training time in seconds.
+        float: Maximum memory allocated in MB.
+        float: Maximum memory reserved in MB.
     """
     # Create folder structure
     #base_dir = os.path.join(os.getcwd(), "evaluation_phase_seed_" + str(args.run.seed))
@@ -349,6 +423,9 @@ def evaluation_phase(args, base_dir, genotype_init_channels, genotype_to_evaluat
         logging.error("No GPU device available!")
         sys.exit(-1)
     torch.cuda.set_device(args.run.gpu)
+
+    # reset peak memory stats
+    torch.cuda.reset_peak_memory_stats()
 
     # Set random seeds for random, numpy, torch and cuda
     rng_seed = train_utils.RNGSeed(args.run.seed)
@@ -483,6 +560,11 @@ def evaluation_phase(args, base_dir, genotype_init_channels, genotype_to_evaluat
         writer.add_scalar("Loss/valid", valid_obj, epoch)
         writer.add_scalar("Top1/valid", valid_acc, epoch)
         writer.add_scalar("Top5/valid", valid_top5, epoch)
+        # memory stats
+        mem_peak_allocated_MB = torch.cuda.max_memory_allocated() / 1e6
+        mem_peak_reserved_MB = torch.cuda.max_memory_reserved() / 1e6
+        writer.add_scalar("Mem/peak_allocated_MB", mem_peak_allocated_MB, epoch)
+        writer.add_scalar("Mem/peak_reserved_MB", mem_peak_reserved_MB, epoch)
 
         # Use validation accuracy to determine if we have obtained new best weights
         if valid_acc > best_observed['valid']:
@@ -533,7 +615,19 @@ def evaluation_phase(args, base_dir, genotype_init_channels, genotype_to_evaluat
         
     # before return, remove logging filehandler of current logfile, so that the following logs aren't written in the current log
     logging.getLogger().removeHandler(logging.getLogger().handlers[-1])
-    return os.path.join(checkpoint_dir, 'model_best.ckpt'), best_observed['runtime'], best_observed['train'], best_observed['valid'], overall_runtime
+    return (
+        os.path.join(checkpoint_dir, 'model_best.ckpt'),
+        best_observed['runtime'],
+        best_observed['train'],
+        best_observed['valid'],
+        overall_runtime,
+        torch.cuda.max_memory_allocated() / 1e6,
+        torch.cuda.max_memory_reserved() / 1e6
+    )
+    
+    
+    
+        
 
 
 def search_phase(args, base_dir):
@@ -552,6 +646,8 @@ def search_phase(args, base_dir):
         float: Train accuracy of the best found genotype.
         float: Validation accuracy of the best found genotype.
         float: Overall runtime of the search phase in seconds.
+        float: Maximum memory allocated in MB.
+        float: Maximum memory reserved in MB.
     """
     # Create folder structure
     #base_dir = os.path.join(os.getcwd(), "search_phase_seed_" + str(args.run.seed))
@@ -580,6 +676,9 @@ def search_phase(args, base_dir):
         logging.error("No GPU device available")
         sys.exit(-1)
     torch.cuda.set_device(args.run.gpu)
+
+    # reset peak memory stats
+    torch.cuda.reset_peak_memory_stats()
 
     # Set random seeds for random, numpy, torch and cuda
     rng_seed = train_utils.RNGSeed(args.run.seed)
@@ -744,6 +843,11 @@ def search_phase(args, base_dir):
         own_writer.add_scalar('Top1/valid', valid_acc, epoch)
         own_writer.add_scalar('Top5/valid', valid_top5, epoch)
         logging.info(f"| valid_acc: {valid_acc} |")
+        # memory stats
+        mem_peak_allocated_MB = torch.cuda.max_memory_allocated() / 1e6
+        mem_peak_reserved_MB = torch.cuda.max_memory_reserved() / 1e6
+        writer.add_scalar("Mem/peak_allocated_MB", mem_peak_allocated_MB, epoch)
+        writer.add_scalar("Mem/peak_reserved_MB", mem_peak_reserved_MB, epoch)
 
         if (args.search.single_level and train_acc > best_observed['train']) or (not args.search.single_level and valid_acc > best_observed['valid']):
                 best_observed['train'] = train_acc
@@ -802,7 +906,18 @@ def search_phase(args, base_dir):
 
     # before return, remove logging filehandler of current logfile, so that the following logs aren't written in the current log
     logging.getLogger().removeHandler(logging.getLogger().handlers[-1])
-    return best_observed['genotype_raw'], best_observed['runtime'], best_observed['train'], best_observed['valid'], overall_runtime
+    return (
+        best_observed['genotype_raw'],
+        best_observed['runtime'],
+        best_observed['train'],
+        best_observed['valid'],
+        overall_runtime,
+        torch.cuda.max_memory_allocated() / 1e6,
+        torch.cuda.max_memory_reserved() / 1e6
+    )
+    
+    
+        
 
 
 def train_search_phase(
