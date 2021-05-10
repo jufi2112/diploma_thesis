@@ -14,7 +14,7 @@
 #SBATCH -e /scratch/ws/1/s8732099-da/slurm_output/grid_search_sequential_seed_3030_error.out
 
 module load modenv/hiera GCC/10.2.0 CUDA/11.1.1 OpenMPI/4.0.5 PyTorch/1.7.1
-source /scratch/ws/1/s8732099-da/.venv/gaea/bin/activate
+source /scratch/ws/1/s8732099-da/.venv/gaea_alpha/bin/activate
 export PYTHONPATH=$PYTHONPATH:/scratch/ws/1/s8732099-da/git/gaea_release/AutoDL-Projects
 
 python /scratch/ws/1/s8732099-da/git/gaea_release/cnn/experiments_da.py \
