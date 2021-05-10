@@ -52,25 +52,92 @@ def main(args):
             # find best performing init_channels
             best_init_channels = eval_history.keys()[0]
 
-            encountered_errors = []
+            encountered_eval_errors = []
 
             for channels, values in eval_history.items():
                 if "search_error" in values.keys() or "eval_error" in values.keys():
-                    encountered_errors.append({
-                        'init_channels': channels,
-                        'error': 
-                    })
+                    if "eval_error" in values.keys():
+                        encountered_eval_errors.append({
+                            'init_channels': channels,
+                            'error': values['eval_error']
+                        })
                     continue
                 if values['valid_acc'] > eval_history[best_init_channels]['valid_acc']:
                     best_init_channels = channels
 
+            # search for search errors
+            encountered_search_errors = []
+            for channels, values in search_history.items():
+                if "error" in values.keys():
+                    encountered_search_errors.append({
+                        'init_channels': channels,
+                        'error': values['error']
+                    })
+
+            # print errors
+            logging.info(f"Encountered a total of {len(encountered_eval_errors) + len(encountered_search_errors)} errors during search and evaluation.")
+            logging.info(f"{len(encountered_search_errors)} erros during architecture search.")
+            logging.info(f"{len(encountered_eval_errors)} errors during architecture evaluation.")
+            logging.info("NAS errors:")
+            for error in encountered_search_errors:
+                logging.info(f"| init_channels: {error['init_channels']} | error: {error['error']} |")
+
+            logging.info("Evaluation errors:")
+            for error in encountered_eval_errors:
+                logging.info(f"| init_channels: {error['init_channels']} | error: {error['error']} |")
+
+            # print information about best performing init_channels
             logging.info(f"Grid search finished after a total of {timedelta(seconds=(runtime_search_phase + runtime_eval_phase))} hh:mm:ss.")
             logging.info(f"NAS took {timedelta(seconds=runtime_search_phase)} hh:mm:ss.")
             logging.info(f"Evaluation of searched architectures took {timedelta(seconds=runtime_eval_phase)} hh:mm:ss.")
+
+            logging.info(f"Best found architecture with init_channels={best_init_channels}: ")
+            logging.info(f"Path to checkpoint: {eval_history[best_init_channels]['checkpoint_path']}")
+            logging.info(f"Number of model parameters: {eval_history[best_init_channels]['model_parameters']}")
+            logging.info(f"Genotype: {search_history[best_init_channels]['best_genotype']}")
+            logging.info(f"Evaluation train_acc: {eval_history[best_init_channels]['train_acc']} %")
+            logging.info(f"Search train_acc:     {search_history[best_init_channels]['search_train_acc']} %")
+            logging.info(f"Evaluation valid_acc: {eval_history[best_init_channels]['valid_acc']} %")
+            logging.info(f"Search valid_acc:     {search_history[best_init_channels]['search_valid_acc']} %")
+            logging.info(f"Evaluation time: {timedelta(seconds=eval_history[best_init_channels]['overall_eval_time'])} hh:mm:ss.")
+            logging.info(f"Search time: {timedelta(seconds=search_history[best_init_channels]['overall_search_time'])} hh:mm.ss.")
+            logging.info(f"Max memory allocated during evaluation: {eval_history[best_init_channels]['max_mem_allocated_MB']} MB.")
+            logging.info(f"Max memory allocated during search: {search_history[best_init_channels]['max_mem_allocated_MB']} MB.")
+
         elif search_history is not None:
-            pass
+            logging.info("Performed search phase only, in order to obtain the true performance of a genotype, you still need to evaluate it.")
+            
+
+            best_init_channels = search_history.keys()[0]
+            encountered_errors = []
+
+            for channels, values in search_history.items():
+                if "error" in values.keys():
+                    encountered_errors.append({
+                        'init_channels': channels,
+                        'error': values['error']
+                    })
+                    continue
+                if values['search_train_acc'] > search_history[best_init_channels]['search_train_acc']:
+                    best_init_channels = channels
+
+            logging.info(f"Encountered a total of {len(encountered_errors)} errors during search:")
+            for error in encountered_errors:
+                logging.info(f"| init_channels: {error['init_channels']} | error: {error['error']}")
+
+            # print stats
+            logging.info("The following best genotype is only selected according to best shared-weights training accuracy!")
+            logging.info(f"Overall runtime of the search phase: {timedelta(seconds=runtime_search_phase)} hh:mm:ss.")
+            logging.info(f"Best performing init_channels: {best_init_channels}")
+            logging.info(f"Best genotype: {search_history[best_init_channels]['best_genotype']}")
+            logging.info(f"Search train_acc: {search_history[best_init_channels]['search_train_acc']} %")
+            logging.info(f"Search valid_acc: {search_history[best_init_channels]['search_valid_acc']} %")
+            logging.info(f"Search time: {timedelta(seconds=search_history[best_init_channels]['overall_search_time'])} hh:mm:ss.")
+            logging.info(f"Max memory allocated during search: {search_history[best_init_channels]['max_mem_allocated_MB']} MB.")
+
+
         else:
-            pass
+            raise ValueError("Both search_history and eval_history are None. Critical error during grid_search. Consult logs for more info.")
     elif args.method.name == "gaussian_process":
         raise NotImplementedError('Gaussian process is currently not implemented.')
     else:
@@ -227,7 +294,8 @@ def grid_search(args):
                         best_weights_valid_acc,
                         single_training_time,
                         max_mem_allocated_MB,
-                        max_mem_reserved_MB
+                        max_mem_reserved_MB,
+                        total_params
                     ) = evaluation_phase(
                         args,
                         base_dir_eval,
@@ -259,7 +327,8 @@ def grid_search(args):
                     'valid_acc': best_weights_valid_acc,
                     'overall_eval_time': single_training_time,
                     'max_mem_allocated_MB': max_mem_allocated_MB,
-                    'max_mem_reserved_MB': max_mem_reserved_MB
+                    'max_mem_reserved_MB': max_mem_reserved_MB,
+                    'model_parameters': total_params
                 }
 
                 # save checkpoint
@@ -332,7 +401,8 @@ def grid_search(args):
                     best_weights_valid_acc,
                     single_training_time,
                     max_mem_allocated_MB,
-                    max_mem_reserved_MB
+                    max_mem_reserved_MB,
+                    total_params
                 ) = evaluation_phase(
                     args,
                     base_dir_eval,
@@ -364,7 +434,8 @@ def grid_search(args):
                 'valid_acc': best_weights_valid_acc,
                 'overall_eval_time': single_training_time,
                 'max_mem_allocated_MB': max_mem_allocated_MB,
-                'max_mem_reserved_MB': max_mem_reserved_MB
+                'max_mem_reserved_MB': max_mem_reserved_MB,
+                'model_parameters': total_params
             }
 
             # save checkpoint
@@ -402,6 +473,7 @@ def evaluation_phase(args, base_dir, genotype_init_channels, genotype_to_evaluat
         float: Overall training time in seconds.
         float: Maximum memory allocated in MB.
         float: Maximum memory reserved in MB.
+        int: Number of model parameters.
     """
     # Create folder structure
     #base_dir = os.path.join(os.getcwd(), "evaluation_phase_seed_" + str(args.run.seed))
@@ -622,7 +694,8 @@ def evaluation_phase(args, base_dir, genotype_init_channels, genotype_to_evaluat
         best_observed['valid'],
         overall_runtime,
         torch.cuda.max_memory_allocated() / 1e6,
-        torch.cuda.max_memory_reserved() / 1e6
+        torch.cuda.max_memory_reserved() / 1e6,
+        total_params
     )
     
     
@@ -934,7 +1007,7 @@ def train_search_phase(
     """Train routine for architecture search phase.
 
     Args:
-        args: Arguments
+        args (OmegaConf): Arguments
         train_queue (torch.utils.DataLoader): Training dataset.
         valid_queue (torch.utils.DataLoader): Validation dataset.
             When utilizing single-level search, this is supposed to be a 
@@ -1026,7 +1099,7 @@ def train_evaluation_phase(
     """Train routine for architecture evaluation phase.
 
     Args:
-        args: Arguments
+        args (OmegaConf): Arguments
         train_queue (torch.utils.DataLoader): Training dataset.
         model (torch.nn.Module): The model that should be trained.
         criterion (callable): Loss that should be used for weight updates.
