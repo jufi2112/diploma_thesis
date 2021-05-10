@@ -163,6 +163,12 @@ def grid_search(args):
 
     logging.info(f"Hyperparameters: \n{args.pretty()}")
 
+    if not torch.cuda.is_available():
+        logging.error("No GPU device available")
+        sys.exit(-1)
+    torch.cuda.set_device(args.run_search_phase.gpu)
+    torch.backends.cudnn.benchmark=True
+
     # overall directory (cwd) is set up by hydra
     # base directories for search and evaluation phases
     base_dir_search = os.path.join(cwd, "search_phase_seed_" + str(args.run_search_phase.seed))
@@ -491,11 +497,14 @@ def evaluation_phase(args, base_dir, genotype_init_channels, genotype_to_evaluat
     tensorboard_writer_dir = os.path.join(tensorboard_dir, "init_channels_" + str(genotype_init_channels))
     writer = SummaryWriter(tensorboard_writer_dir)
 
-    if not torch.cuda.is_available():
-        logging.error("No GPU device available!")
-        sys.exit(-1)
-    torch.cuda.set_device(args.run.gpu)
-    torch.backends.cudnn.benchmark=True
+    #if not torch.cuda.is_available():
+    #    logging.error("No GPU device available!")
+    #    sys.exit(-1)
+    #torch.cuda.set_device(args.run.gpu)
+    #torch.backends.cudnn.benchmark=True
+
+    current_device = torch.cuda.current_device()
+    logging.info(f"Current cuda device: {current_device} - {torch.cuda.get_device_name(current_device)}")
 
     # reset peak memory stats
     torch.cuda.reset_peak_memory_stats()
@@ -746,11 +755,11 @@ def search_phase(args, base_dir):
     # own writer that I use to keep track of interesting variables
     own_writer = SummaryWriter(tensorboard_writer_dir)
 
-    if not torch.cuda.is_available():
-        logging.error("No GPU device available")
-        sys.exit(-1)
-    torch.cuda.set_device(args.run.gpu)
-    torch.backends.cudnn.benchmark=True
+    #if not torch.cuda.is_available():
+    #    logging.error("No GPU device available")
+    #    sys.exit(-1)
+    #torch.cuda.set_device(args.run.gpu)
+    #torch.backends.cudnn.benchmark=True
 
     current_device = torch.cuda.current_device()
     logging.info(f"Current cuda device: {current_device} - {torch.cuda.get_device_name(current_device)}")
