@@ -495,6 +495,7 @@ def evaluation_phase(args, base_dir, genotype_init_channels, genotype_to_evaluat
         logging.error("No GPU device available!")
         sys.exit(-1)
     torch.cuda.set_device(args.run.gpu)
+    torch.backends.cudnn.benchmark=True
 
     # reset peak memory stats
     torch.cuda.reset_peak_memory_stats()
@@ -749,6 +750,10 @@ def search_phase(args, base_dir):
         logging.error("No GPU device available")
         sys.exit(-1)
     torch.cuda.set_device(args.run.gpu)
+    torch.backends.cudnn.benchmark=True
+
+    current_device = torch.cuda.current_device()
+    logging.info(f"Current cuda device: {current_device} - {torch.cuda.get_device_name(current_device)}")
 
     # reset peak memory stats
     torch.cuda.reset_peak_memory_stats()
