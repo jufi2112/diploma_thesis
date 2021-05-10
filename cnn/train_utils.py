@@ -51,7 +51,7 @@ def accuracy(output, target, topk=(1,)):
 
     res = []
     for k in topk:
-        correct_k = correct[:k].view(-1).float().sum(0)
+        correct_k = correct[:k].reshape(-1).float().sum(0)
         res.append(correct_k.mul_(100.0 / batch_size))
     return res
 
@@ -783,7 +783,7 @@ def save_outer_loop_checkpoint(folder, history: dict, overall_runtime: float):
     """
     checkpoint = {
         'history': history,
-        'runtime': runtime
+        'runtime': overall_runtime
     }
     ckpt = os.path.join(folder, 'outer_loop.ckpt')
     ckpt_part = ckpt + ".part"
