@@ -487,6 +487,9 @@ def evaluation_phase(args, base_dir, genotype_init_channels, genotype_to_evaluat
     tensorboard_dir = os.path.join(base_dir, "tensorboard")
     checkpoint_dir = os.path.join(base_dir, "checkpoints", "checkpoint_init_channels_" + str(genotype_init_channels))
 
+    for directory in [log_dir, tensorboard_dir, checkpoint_dir]:
+        os.makedirs(directory, exist_ok=True)
+
     # Log file for the current evaluation phase
     logfile = os.path.join(log_dir, "log_init_channels_" + str(genotype_init_channels) + ".txt")
     train_utils.set_up_logging(logfile)
