@@ -520,14 +520,14 @@ def evaluation_phase(args, base_dir, genotype_init_channels, genotype_to_evaluat
 
     # Load datasets
     num_classes, (train_queue, _), valid_queue, test_queue, (num_train, num_valid, num_test) = train_utils.create_cifar10_data_queues_own(
-        args, eval_split=True
+        args, evaluation_mode=True
     )
 
     logging.info(f"Dataset: {args.run.dataset}")
     logging.info(f"Number of classes: {num_classes}")
-    logging.info(f"Number of training images: {number_train}")
-    logging.info(f"Number of validation images: {number_valid}")
-    logging.info(f"Number of test images: {number_test}")
+    logging.info(f"Number of training images: {num_train}")
+    logging.info(f"Number of validation images: {num_valid}")
+    logging.info(f"Number of test images: {num_test}")
 
     # Load genotype
     if type(genotype_to_evaluate) == str:
