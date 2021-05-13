@@ -51,7 +51,7 @@ def main(args):
 
         if eval_history is not None:
             # find best performing init_channels
-            best_init_channels = eval_history.keys()[0]
+            best_init_channels = list(eval_history)[0]
 
             encountered_eval_errors = []
 
@@ -109,7 +109,7 @@ def main(args):
             logging.info("Performed search phase only, in order to obtain the true performance of a genotype, you still need to evaluate it.")
             
 
-            best_init_channels = search_history.keys()[0]
+            best_init_channels = list(search_history)[0]
             encountered_errors = []
 
             for channels, values in search_history.items():
@@ -251,11 +251,12 @@ def grid_search(args):
                         search_history,
                         overall_runtime_search_phase
                     )
-                    train_utils.save_outer_loop_checkpoint(
-                        base_dir_eval,
-                        eval_history,
-                        overall_runtime_eval_phase
-                    )
+                    if eval_history is not None:
+                        train_utils.save_outer_loop_checkpoint(
+                            base_dir_eval,
+                            eval_history,
+                            overall_runtime_eval_phase
+                        )
                     continue
 
                 logging.info(f"Single search finished after a total of {timedelta(seconds=single_search_time)} hh:mm:ss")

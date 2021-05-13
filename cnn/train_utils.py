@@ -824,6 +824,7 @@ def save_outer_loop_checkpoint(folder, history: dict, overall_runtime: float):
     }
     ckpt = os.path.join(folder, 'outer_loop.ckpt')
     ckpt_part = ckpt + ".part"
+    #os.makedirs(ckpt_part, exist_ok=True)
     torch.save(checkpoint, ckpt_part)
     os.replace(ckpt_part, ckpt)
 
