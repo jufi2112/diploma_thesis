@@ -448,6 +448,7 @@ def create_cifar10_data_queues_own(args, evaluation_mode=False):
 def create_data_queues(args, eval_split=False):
     """Creates training and validation data queues.
     When eval_split is set to true, returns test data instead of validation data.
+    Not compatible with code from experiments_da.py!
 
     Args:
         args: Arguments
@@ -494,7 +495,7 @@ def create_data_queues(args, eval_split=False):
             train_end = num_train
             val_start = 0
         else:
-            split = int(np.floor(args.search.train_portion * num_train))
+            split = int(np.floor(args.search.train_portion_bi_level * num_train))
             train_end = split
             val_start = split
 

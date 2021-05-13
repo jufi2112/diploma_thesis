@@ -792,13 +792,13 @@ def search_phase(args, base_dir):
     # split train and validation data
     if args.search.single_level:
         # validation data is not used during search
-        train_valid_split = int(np.floor(num_train_overall * args.search.train_portion_single_level))
+        train_valid_split = int(np.floor(num_train_overall * args.train.train_portion_single_level))
         assert train_valid_split % 2 == 0, f"Train data must be splittable into two subsets of the same size, but is of size {len(train_valid_split)}"
         train_end = int(np.floor(train_valid_split / 2))    # point at which training data is split into data for weight updates and data for architecture updates
     else:
         # validation data is used to update architectural weights
         valid_dataset = deepcopy(train_dataset) # should have same data transformation as train data
-        train_valid_split = int(np.floor(num_train_overall * args.search.train_portion_bi_level))
+        train_valid_split = int(np.floor(num_train_overall * args.train.train_portion_bi_level))
         assert len(train_indices_overall[:train_valid_split]) == len(train_indices_overall[train_valid_split:]), "Train and validation dataset must have same size"
         train_end = train_valid_split
     
