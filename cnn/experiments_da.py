@@ -359,7 +359,7 @@ def grid_search(args):
             eval_history, runtime_eval = train_utils.load_outer_loop_checkpoint(base_dir_eval)
             overall_runtime_eval_phase += runtime_eval
             logging.info(f"Resumed previous grid search evaluation phase checkpoint which already ran for {timedelta(seconds=runtime_eval)} hh:mm:ss.")
-        except:
+        except Exception as e:
             logging.info(e)
             logging.info("Starting evaluation phase from scratch.")
             eval_history = {}
