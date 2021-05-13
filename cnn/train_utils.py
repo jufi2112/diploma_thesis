@@ -283,21 +283,58 @@ def create_nasbench_201_data_queues(args, eval_split=False):
     return num_train, class_num, search_loader, valid_loader
 
 
+def get_cifar10_data_sets(args):
+    """Creates and returns the CIFAR-10 dataset. 
+    Useful if one wants to create per-epoch data loaders.
+
+    Args:
+        args (OmegaConf): Arguments
+        evaluation_mode (bool): Whether the datasets are used for search or evaluation.
+
+    Returns:
+        torchvision.dataset: Train dataset
+        torchvision.dataset: Validation dataset. The same as train dataset but with same transformations as test data.
+        torchvision.dataset: Test dataset
+    """
+    if "nas-bench-201" in args.search.search_space:
+        raise ValueError("This function is not designed for NAS-Bench-201.")
+    train_transform, valid_transform, test_transform = _data_transforms_cifar10(args)
+    train_data = dset.CIFAR10(
+        root=args.run.data,
+        train=True,
+        download=True,
+        transform=train_transform
+    )
+    valid_data = dset.CIFAR10(
+        root=args.run.data,
+        train=True,
+        download=True,
+        transform=valid_transform
+    )
+    test_data = dset.CIFAR10(
+        root=args.run.data,
+        train=False,
+        download=True,
+        transform=test_transform
+    )
+    return train_data, valid_data, test_data
+
+
 def create_cifar10_data_queues_own(args, evaluation_mode=False):
     """Creates and returns CIFAR-10 train, validation and test data sets for experiments.
     This is a modification of the create_data_queues method more specifically tailored to the needs of my diploma thesis.
     During single level search, two train datasets with the same images are returned to enable usage of the existing code
 
     Args:
-        args: Arguments
+        args (OmegaConf): Arguments
         evaluation_mode (bool): Whether the data sets are used for architecture search or architecture evaluation.
             During evaluation, only a small portion of the training data should be utilized for validation
                 (based on train.train_portion in eval.yaml)
             During search, two possibilities exist:
                 single_level: Only a small portion of the training data should be utilized for validation
-                    (based on search.train_portion_single_level in method_eedarts_space_pcdarts.yaml)
+                    (based on train.train_portion_single_level in method_eedarts_space_pcdarts.yaml)
                 bi-level: Train and validation sets are splitted according to 
-                    search.train_portion_bi_level in method_eedarts_space_pcdarts.yaml
+                    train.train_portion_bi_level in method_eedarts_space_pcdarts.yaml
         
     Returns:
         int: Number of classes.
@@ -359,13 +396,13 @@ def create_cifar10_data_queues_own(args, evaluation_mode=False):
     else:
         # Architecture search
         if args.search.single_level:
-            split = int(np.floor(num_train * args.search.train_portion_single_level))
+            split = int(np.floor(num_train * args.train.train_portion_single_level))
             train_end = split
             train_2_end = split
             valid_start = split
         else:
             valid_data = deepcopy(train_data) # want to have the exact same data (including preprocessing) as train_data
-            split = int(np.floor(num_train * args.search.train_portion_bi_level))
+            split = int(np.floor(num_train * args.train.train_portion_bi_level))
             train_end = split
             train_2_end = None  # don't need second train data loader for bi-level, since we use validation set for this
             valid_start = split

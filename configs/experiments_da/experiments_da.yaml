@@ -5,6 +5,8 @@
 search:
     # single-level or bi-level optimization
     single_level: true
+    # shuffle train samples during single-level search
+    single_level_shuffle: true
     # exclude zero-operation from list of all possible operations
     exclude_zero: false
     track_running_stats: true
@@ -12,8 +14,6 @@ search:
     search_space: pcdarts 
     nodes: 4
     arch_grad_clip: null 
-    train_portion_bi_level: 0.5
-    train_portion_single_level: 0.8
     arch_learning_rate: 0.1
     edge_learning_rate: 0.1
     discrete: false
@@ -39,6 +39,8 @@ train_search_phase:
     auxiliary_weight: 0.4
     drop_path_prob: 0
     grad_clip: 5
+    train_portion_bi_level: 0.5
+    train_portion_single_level: 0.8
 
 run_search_phase:
     s3_bucket: null

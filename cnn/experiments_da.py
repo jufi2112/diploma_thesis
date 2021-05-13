@@ -12,6 +12,7 @@ import json
 import torch
 import torch.nn as nn
 from collections import namedtuple
+from copy import deepcopy
 
 from torch.utils.tensorboard import SummaryWriter
 from torch.autograd import Variable
@@ -662,7 +663,7 @@ def evaluation_phase(args, base_dir, genotype_init_channels, genotype_to_evaluat
             # the weights with the best performance according to validation data
             train_utils.save(
                 checkpoint_dir,
-                epochs+1,
+                epoch+1,
                 rng_seed,
                 model,
                 optimizer,
@@ -674,11 +675,11 @@ def evaluation_phase(args, base_dir, genotype_init_channels, genotype_to_evaluat
         # Save checkpoint for current epoch
         train_utils.save(
             checkpoint_dir,
-            epochs+1,
+            epoch+1,
             rng_seed,
             model,
             optimizer,
-            runtime=(timer() - training_start_time + previous_runtime),
+            runtime=(timer() - train_start_time + previous_runtime),
             best_observed=best_observed
         )
 
@@ -711,13 +712,9 @@ def evaluation_phase(args, base_dir, genotype_init_channels, genotype_to_evaluat
         total_params
     )
     
-    
-    
-        
-
 
 def search_phase(args, base_dir):
-    """Performs NAS
+    """Performs NAS.
     Code is mostly copied from train_search.py but modified to only work with GAEA PC-DARTS.
     Best genotype is selected according to training accuracy for single-level search and according to validation
         accuracy for bi-level search.
@@ -778,17 +775,78 @@ def search_phase(args, base_dir):
     else:
         criterion = nn.CrossEntropyLoss()
 
+    # old code that directly obtains data queues
     # if single-level, train_2_queue points to the training data. During bi-level search, train_2_queue will be None and we'll use valid_queue for search
-    num_classes, (train_queue, train_2_queue), valid_queue, test_queue, (number_train, number_valid, number_test) = train_utils.create_cifar10_data_queues_own(args)
+    #num_classes, (train_queue, train_2_queue), valid_queue, test_queue, (number_train, number_valid, number_test) = train_utils.create_cifar10_data_queues_own(args)
+
+    if args.run.dataset != "cifar10":
+        raise ValueError(f"Only cifar10 dataset is supported, got {args.run.dataset}")
+
+    # Get datasets; valid_dataset is the same as train_dataset besides different data transformations
+    train_dataset, valid_dataset, test_dataset = train_utils.get_cifar10_data_sets(args)
+    num_test = len(test_dataset)
+    del test_dataset    # don't want to have anything to do with test data here apart from getting the number of test samples
+    num_train_overall = len(train_dataset)
+    train_indices_overall = np.arange(num_train_overall)
+    # split train and validation data
+    if args.search.single_level:
+        # validation data is not used during search
+        train_valid_split = int(np.floor(num_train_overall * args.search.train_portion_single_level))
+        assert train_valid_split % 2 == 0, f"Train data must be splittable into two subsets of the same size, but is of size {len(train_valid_split)}"
+        train_end = int(np.floor(train_valid_split / 2))    # point at which training data is split into data for weight updates and data for architecture updates
+    else:
+        # validation data is used to update architectural weights
+        valid_dataset = deepcopy(train_dataset) # should have same data transformation as train data
+        train_valid_split = int(np.floor(num_train_overall * args.search.train_portion_bi_level))
+        assert len(train_indices_overall[:train_valid_split]) == len(train_indices_overall[train_valid_split:]), "Train and validation dataset must have same size"
+        train_end = train_valid_split
+    
+    num_train = train_valid_split
+    num_valid = num_train_overall - num_train
+    num_classes = 10
+
+    # Random samplers for data queues
+    train_sampler = torch.utils.data.sampler.SubsetRandomSampler(train_indices_overall[:train_end])
+    valid_sampler = torch.utils.data.sampler.SubsetRandomSampler(train_indices_overall[train_valid_split:])
+    if args.search.single_level:
+        train_2_sampler = torch.utils.data.sampler.SubsetRandomSampler(train_indices_overall[train_end:train_valid_split])  # used for architecture updates
+
+    # train queue will change during single-level search if single_level_shuffle is true
+    train_queue = torch.utils.data.DataLoader(
+        dataset=train_dataset,
+        batch_size=args.train.batch_size,
+        sampler=train_sampler,
+        pin_memory=True,
+        num_workers=0
+    )
+
+    if args.search.single_level:
+        # train_2_queue will change during single-level search if single_level_shuffle is true
+        train_2_queue = torch.utils.data.DataLoader(
+            dataset=train_dataset,
+            batch_size=args.train.batch_size,
+            sampler=train_2_sampler,
+            pin_memory=True,
+            num_workers=0
+        )
+
+    # validation queue stays constant over whole search phase
+    valid_queue = torch.utils.data.DataLoader(
+        dataset=valid_dataset,
+        batch_size=args.train.batch_size,
+        sampler=valid_sampler,
+        pin_memory=True,
+        num_workers=0
+    )
 
     logging.info(f"Dataset: {args.run.dataset}")
     logging.info(f"Number of classes: {num_classes}")
-    logging.info(f"Number of training images: {number_train}")
+    logging.info(f"Number of training images: {num_train}")
     if args.search.single_level:
-        logging.info(f"Number of validation images (unused during search): {number_valid}")
+        logging.info(f"Number of validation images (unused during search): {num_valid}")
     else:
-        logging.info(f"Number of validation images (used during search): {number_valid}")
-    logging.info(f"Number of test images (unused during search): {number_test}")
+        logging.info(f"Number of validation images (used during search): {num_valid}")
+    logging.info(f"Number of test images (unused during search): {num_test}")
 
     # Create model
     model = PCDARTSNetwork(
@@ -866,9 +924,34 @@ def search_phase(args, base_dir):
 
         model.drop_path_prob = args.train.drop_path_prob * epoch / args.run.epochs
 
+        # during single-level search, shuffle training samples such that they can appear in both training queues (considering all epochs)
+        if args.search.single_level and args.search.single_level_shuffle:
+            train_indices = np.arange(num_train)    # num_train == train_valid_split
+            np.random.shuffle(train_indices)
+            split = int(np.floor(0.5 * num_train))
+
+            train_sampler = torch.utils.data.sampler.SubsetRandomSampler(train_indices[:split])
+            train_2_sampler = torch.utils.data.sampler.SubsetRandomSampler(train_indices[split:])
+
+            train_queue = torch.utils.data.DataLoader(
+                dataset=train_dataset,
+                batch_size=args.train.batch_size,
+                sampler=train_sampler,
+                pin_memory=True,
+                num_workers=0
+            )
+
+            train_2_queue = torch.utils.data.DataLoader(
+                dataset=train_dataset,
+                batch_size=args.train.batch_size,
+                sampler=train_2_sampler,
+                pin_memory=True,
+                num_workers=0
+            )
+
         # training returns top1, loss and top5
         train_acc, train_obj, train_top5 = train_search_phase(
-            args, train_queue, valid_queue if train_2_queue == None else train_2_queue, # valid_queue for bi-level search, train_2_queue for single-level search
+            args, train_queue, train_2_queue if args.search.single_level else valid_queue,
             model, architect, criterion, optimizer, lr,
         )
         architect.baseline = train_obj
