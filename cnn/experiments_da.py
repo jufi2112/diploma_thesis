@@ -36,7 +36,7 @@ def main(args):
 
     working_directory = os.getcwd()
     # TODO: dunno why original implementation used double logging
-    log = os.path.join(working_directory, "overall_log.txt")
+    log = os.path.join(working_directory, f"overall_log_seed_{args.run_search_phase.seed}.txt")
     train_utils.set_up_logging(log)
 
     logging.info(f"Hyperparameters: \n{args.pretty()}")
@@ -159,7 +159,7 @@ def grid_search(args):
         float: Overall runtime of the evaluation phase in seconds.
     """
     cwd = os.getcwd()
-    log = os.path.join(cwd, "log_grid_search.txt")
+    log = os.path.join(cwd, f"log_grid_search_seed_{args.run_search_phase.seed}.txt")
     train_utils.set_up_logging(log)
 
     logging.info(f"Hyperparameters: \n{args.pretty()}")
