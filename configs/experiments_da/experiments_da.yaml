@@ -71,7 +71,7 @@ train_eval_phase:
     cutout_length: 16
     auxiliary: true # @see https://stats.stackexchange.com/questions/304699/what-is-auxiliary-loss-as-mentioned-in-pspnet-paper
     auxiliary_weight: 0.4
-    drop_path_prob: 0.2
+    drop_path_prob: 0.3
     grad_clip: 5
     train_portion: 0.8
 
