@@ -419,21 +419,21 @@ def create_cifar10_data_queues_own(args, evaluation_mode=False):
             batch_size=args.train.batch_size,
             sampler=train_sampler,
             pin_memory=True,
-            num_workers=0
+            num_workers=args.run.n_threads_data
         )
         train_2_queue = None if train_2_end == None else torch.utils.data.DataLoader(
             dataset=train_data,
             batch_size=args.train.batch_size,
             sampler=train_2_sampler,
             pin_memory=True,
-            num_workers=0
+            num_workers=args.run.n_threads_data
         )
         valid_queue = torch.utils.data.DataLoader(
             dataset=valid_data,
             batch_size=args.train.batch_size,
             sampler=valid_sampler,
             pin_memory=True,
-            num_workers=0
+            num_workers=args.run.n_threads_data
         )
         test_queue = torch.utils.data.DataLoader(
             dataset=test_data,

@@ -818,7 +818,7 @@ def search_phase(args, base_dir):
         batch_size=args.train.batch_size,
         sampler=train_sampler,
         pin_memory=True,
-        num_workers=0
+        num_workers=args.run.n_threads_data
     )
 
     if args.search.single_level:
@@ -828,7 +828,7 @@ def search_phase(args, base_dir):
             batch_size=args.train.batch_size,
             sampler=train_2_sampler,
             pin_memory=True,
-            num_workers=0
+            num_workers=args.run.n_threads_data
         )
 
     # validation queue stays constant over whole search phase
@@ -837,7 +837,7 @@ def search_phase(args, base_dir):
         batch_size=args.train.batch_size,
         sampler=valid_sampler,
         pin_memory=True,
-        num_workers=0
+        num_workers=args.run.n_threads_data
     )
 
     logging.info(f"Dataset: {args.run.dataset}")
@@ -939,7 +939,7 @@ def search_phase(args, base_dir):
                 batch_size=args.train.batch_size,
                 sampler=train_sampler,
                 pin_memory=True,
-                num_workers=0
+                num_workers=args.run.n_threads_data
             )
 
             train_2_queue = torch.utils.data.DataLoader(
@@ -947,7 +947,7 @@ def search_phase(args, base_dir):
                 batch_size=args.train.batch_size,
                 sampler=train_2_sampler,
                 pin_memory=True,
-                num_workers=0
+                num_workers=args.run.n_threads_data
             )
 
         # training returns top1, loss and top5
