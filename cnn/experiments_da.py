@@ -740,8 +740,11 @@ def search_phase(args, base_dir):
     tensorboard_dir = os.path.join(base_dir, "tensorboard")
     genotype_dir = os.path.join(base_dir, "genotypes")
     checkpoint_dir = os.path.join(base_dir, "checkpoints", "checkpoint_init_channels_" + str(args.train.init_channels))
+    start_time = timer()
     for directory in [log_dir, summary_dir, tensorboard_dir, genotype_dir, checkpoint_dir]:
         os.makedirs(directory, exist_ok=True)
+    end_time = timer()
+    logging.info(f"Creation of sub-directories took {timedelta(seconds=(end_time - start_time))} hh:mm:ss.")
 
     # Log file for the current search phase
     logfile = os.path.join(log_dir, "log_init_channels_" + str(args.train.init_channels) + ".txt")
@@ -750,11 +753,14 @@ def search_phase(args, base_dir):
     logging.info(f"Hyperparameters: \n{args.pretty()}")
 
     # Setup SummaryWriters
+    start_time = timer()
     summary_writer_dir = os.path.join(summary_dir, "init_channels_" + str(args.train.init_channels))
     tensorboard_writer_dir = os.path.join(tensorboard_dir, "init_channels_" + str(args.train.init_channels))
     writer = SummaryWriter(summary_writer_dir)
     # own writer that I use to keep track of interesting variables
     own_writer = SummaryWriter(tensorboard_writer_dir)
+    end_time = timer()
+    logging.info(f"Creating summary writers took {timedelta(seconds=(end_time - start_time))} hh:mm:ss.")
 
     #if not torch.cuda.is_available():
     #    logging.error("No GPU device available")
@@ -762,14 +768,23 @@ def search_phase(args, base_dir):
     #torch.cuda.set_device(args.run.gpu)
     #torch.backends.cudnn.benchmark=True
 
+    start_time = timer()
     current_device = torch.cuda.current_device()
     logging.info(f"Current cuda device: {current_device} - {torch.cuda.get_device_name(current_device)}")
+    end_time = timer()
+    logging.info(f"Assigning GPU took {timedelta(seconds=(end_time - start_time))} hh:mm:ss.")
 
     # reset peak memory stats
+    start_time = timer()
     torch.cuda.reset_peak_memory_stats()
+    end_time = timer()
+    logging.info(f"Resetting peak memory stats took {timedelta(seconds=(end_time - start_time))} hh:mm:ss.")
 
     # Set random seeds for random, numpy, torch and cuda
+    start_time = timer()
     rng_seed = train_utils.RNGSeed(args.run.seed)
+    end_time = timer()
+    logging.info(f"Setting random seeds took {timedelta(seconds=(end_time - start_time))} hh:mm:ss.")
 
     if args.train.smooth_cross_entropy:
         criterion = train_utils.cross_entropy_with_label_smoothing
@@ -783,6 +798,7 @@ def search_phase(args, base_dir):
     if args.run.dataset != "cifar10":
         raise ValueError(f"Only cifar10 dataset is supported, got {args.run.dataset}")
 
+    start_time = timer()
     # Get datasets; valid_dataset is the same as train_dataset besides different data transformations
     train_dataset, valid_dataset, test_dataset = train_utils.get_cifar10_data_sets(args)
     num_test = len(test_dataset)
@@ -801,17 +817,23 @@ def search_phase(args, base_dir):
         train_valid_split = int(np.floor(num_train_overall * args.train.train_portion_bi_level))
         assert len(train_indices_overall[:train_valid_split]) == len(train_indices_overall[train_valid_split:]), "Train and validation dataset must have same size"
         train_end = train_valid_split
+
+    end_time = timer()
+    logging.info(f"Creating data sets took {timedelta(seconds=(end_time - start_time))} hh:mm:ss.")
     
     num_train = train_valid_split
     num_valid = num_train_overall - num_train
     num_classes = 10
 
+    start_time = timer()
     # Random samplers for data queues
     train_sampler = torch.utils.data.sampler.SubsetRandomSampler(train_indices_overall[:train_end])
     valid_sampler = torch.utils.data.sampler.SubsetRandomSampler(train_indices_overall[train_valid_split:])
     if args.search.single_level:
         train_2_sampler = torch.utils.data.sampler.SubsetRandomSampler(train_indices_overall[train_end:train_valid_split])  # used for architecture updates
-
+    end_time = timer()
+    logging.info(f"Creating random samplers took {timedelta(seconds=(end_time - start_time))} hh:mm:ss.")
+    start_time = timer()
     # train queue will change during single-level search if single_level_shuffle is true
     train_queue = torch.utils.data.DataLoader(
         dataset=train_dataset,
@@ -839,7 +861,8 @@ def search_phase(args, base_dir):
         pin_memory=True,
         num_workers=args.run.n_threads_data
     )
-
+    end_time = timer()
+    logging.info(f"Creating data queues took {timedelta(seconds=(end_time - start_time))} hh:mm:ss.")
     logging.info(f"Dataset: {args.run.dataset}")
     logging.info(f"Number of classes: {num_classes}")
     logging.info(f"Number of training images: {num_train}")
@@ -850,6 +873,7 @@ def search_phase(args, base_dir):
     logging.info(f"Number of test images (unused during search): {num_test}")
 
     # Create model
+    start_time = timer()
     model = PCDARTSNetwork(
         args.train.init_channels,
         num_classes,
@@ -864,14 +888,22 @@ def search_phase(args, base_dir):
         }
     )
     model = model.cuda()
+    end_time = timer()
+    logging.info(f"Creating model took {timedelta(seconds=(end_time - start_time))} hh:mm:ss.")
     logging.info(f"Model parameter size: {train_utils.count_parameters_in_MB(model)} MB")
-
+    start_time = timer()
     optimizer, scheduler = train_utils.setup_optimizer(model, args)
+    end_time = timer()
+    logging.info(f"Creating optimizer and scheduler took {timedelta(seconds=(end_time - start_time))} hh:mm:ss.")
 
     # Create architect
+    start_time = timer()
     architect = Architect(model, args, writer)
+    end_time = timer()
+    logging.info(f"Creating architect took {timedelta(seconds=(end_time - start_time))} hh:mm:ss.")
 
     # Try to load previous checkpoint
+    start_time = timer()
     try:
         start_epochs, history, previous_runtime, best_observed = train_utils.load(
             checkpoint_dir,
@@ -912,6 +944,8 @@ def search_phase(args, base_dir):
             "runtime": 0.0          # runtime after which the best genotype was found
         }
     
+    end_time = timer()
+    logging.info(f"Loading checkpoint took {timedelta(seconds=(end_time - start_time))} hh:mm:ss.")
     logging.info("Search phase started")
 
     train_start_time = timer()
@@ -926,6 +960,7 @@ def search_phase(args, base_dir):
         model.drop_path_prob = args.train.drop_path_prob * epoch / args.run.epochs
 
         # during single-level search, shuffle training samples such that they can appear in both training queues (considering all epochs)
+        start_time = timer()
         if args.search.single_level and args.search.single_level_shuffle:
             train_indices = np.arange(num_train)    # num_train == train_valid_split
             np.random.shuffle(train_indices)
@@ -949,15 +984,22 @@ def search_phase(args, base_dir):
                 pin_memory=True,
                 num_workers=args.run.n_threads_data
             )
-
+        end_time = timer()
+        logging.info(f"Creating data queues inside training loop took {timedelta(seconds=(end_time - start_time))} hh:mm:ss.")
         # training returns top1, loss and top5
+        start_time = timer()
         train_acc, train_obj, train_top5 = train_search_phase(
             args, train_queue, train_2_queue if args.search.single_level else valid_queue,
             model, architect, criterion, optimizer, lr,
         )
+        end_time = timer()
+        logging.info(f"Train step took {timedelta(seconds=(end_time - start_time))} hh:mm:ss.")
+        start_time = timer()
         architect.baseline = train_obj
         architect.update_history()
         architect.log_vars(epoch, writer)
+        end_time = timer()
+        logging.info(f"Architect variables updating took {timedelta(seconds=(end_time - start_time))} hh:mm:ss.")
 
         if "update_lr_state" in dir(scheduler):
             scheduler.update_lr_state(train_obj)
@@ -965,23 +1007,33 @@ def search_phase(args, base_dir):
         logging.info(f"| train_acc: {train_acc} |")
 
         # History tracking
+        start_time =timer()
         for vs in [("alphas", architect.alphas), ("edges", architect.edges)]:
             for ct in vs[1]:
                 v = vs[1][ct]
                 logging.info("{}-{}".format(vs[0], ct))
                 logging.info(v)
+        end_time = timer()
+        logging.info(f"History tracking took {timedelta(seconds=(end_time - start_time))} hh:mm:ss.")
         # Calling genotypes sets alphas to best arch for EGDAS and MEGDAS
         # so calling here before infer.
+        start_time =timer()
         genotype = architect.genotype()
+        end_time = timer()
+        logging.info(f"Calculating genotype took {timedelta(seconds=(end_time - start_time))} hh:mm:ss.")
         logging.info("genotype = %s", genotype)
 
         # log epoch values to tensorboard
+        start_time = timer()
         own_writer.add_scalar('Loss/train', train_obj, epoch)
         own_writer.add_scalar('Top1/train', train_acc, epoch)
         own_writer.add_scalar('Top5/train', train_top5, epoch)
         own_writer.add_scalar('lr', lr, epoch)
+        end_time = timer()
+        logging.info(f"Tensorboard logging of train variables took {timedelta(seconds=(end_time - start_time))} hh:mm:ss.")
 
         # visualize Genotype
+        start_time =timer()
         start_visualization = timer()
         genotype_graph_normal = visualize.plot(genotype.normal, "", return_type="graph", output_format='png')
         binary_normal = genotype_graph_normal.pipe()
@@ -1004,8 +1056,11 @@ def search_phase(args, base_dir):
         #del graph_reduce
         end_visualization = timer()
         overall_visualization_time += (end_visualization - start_visualization)
+        end_time =timer()
+        logging.info(f"Visualization of genotype took {timedelta(seconds=(end_time - start_time))} hh:mm:ss.")
 
         # log validation metrics, but don't utilize them for decisions during single-level search 
+        start_time =timer()
         valid_acc, valid_obj, valid_top5 = train_utils.infer(
             valid_queue,
             model,
@@ -1013,16 +1068,25 @@ def search_phase(args, base_dir):
             report_freq=args.run.report_freq,
             discrete=args.search.discrete,
         )
+        end_time =timer()
+        logging.info(f"Validation inferring took {timedelta(seconds=(end_time - start_time))} hh:mm:ss.")
+        start_time = timer()
         own_writer.add_scalar('Loss/valid', valid_obj, epoch)
         own_writer.add_scalar('Top1/valid', valid_acc, epoch)
         own_writer.add_scalar('Top5/valid', valid_top5, epoch)
+        end_time =timer()
+        logging.info(f"Tensorboard logging of validation values took {timedelta(seconds=(end_time - start_time))} hh:mm:ss.")
         logging.info(f"| valid_acc: {valid_acc} |")
         # memory stats
+        start_time =timer()
         mem_peak_allocated_MB = torch.cuda.max_memory_allocated() / 1e6
         mem_peak_reserved_MB = torch.cuda.max_memory_reserved() / 1e6
         writer.add_scalar("Mem/peak_allocated_MB", mem_peak_allocated_MB, epoch)
         writer.add_scalar("Mem/peak_reserved_MB", mem_peak_reserved_MB, epoch)
+        end_time = timer()
+        logging.info(f"Tensorboard logging of memory consumption took {timedelta(seconds=(end_time - start_time))} hh:mm:ss.")
 
+        start_time =timer()
         if (args.search.single_level and train_acc > best_observed['train']) or (not args.search.single_level and valid_acc > best_observed['valid']):
                 best_observed['train'] = train_acc
                 best_observed['valid'] = valid_acc
@@ -1030,8 +1094,11 @@ def search_phase(args, base_dir):
                 best_observed['genotype_raw'] = genotype
                 best_observed['genotype_dict'] = train_utils.genotype_to_dict(genotype)
                 best_observed['runtime'] = timer() - train_start_time - overall_visualization_time + previous_runtime
+        end_time = timer()
+        logging.info(f"Updating of best found architecture took {timedelta(seconds=(end_time - start_time))} hh:mm:ss.")
 
         # Save checkpoint of this epoch
+        start_time =timer()
         train_utils.save(
             checkpoint_dir,
             epoch + 1,
@@ -1044,6 +1111,8 @@ def search_phase(args, base_dir):
             runtime=(timer()-train_start_time - overall_visualization_time + previous_runtime),
             best_observed=best_observed
         )
+        end_time = timer()
+        logging.info(f"Saving of checkpoint took {timedelta(seconds=(end_time - start_time))} hh:mm:ss.")
 
         scheduler.step()
 
@@ -1090,9 +1159,6 @@ def search_phase(args, base_dir):
         torch.cuda.max_memory_reserved() / 1e6
     )
     
-    
-        
-
 
 def train_search_phase(
     args,
@@ -1140,16 +1206,18 @@ def train_search_phase(
         input_search, target_search = next(iter(valid_queue))
 
         batch_size = input.size(0)
-
+        start_time = timer()
         input = Variable(input, requires_grad=False).cuda()
         target = Variable(target, requires_grad=False).cuda()
 
         input_search = Variable(input_search, requires_grad=False).cuda()
         target_search = Variable(target_search, requires_grad=False).cuda()
+        end_time = timer()
+        logging.info(f"Transfering images to GPU took {timedelta(seconds=(end_time - start_time))} hh:mm:ss.")
 
         # set the model in train mode (important for layers like dropout and batch normalization)
         model.train()
-
+        start_time = timer()
         if not random_arch:
             architect.step(
                 input,
@@ -1163,26 +1231,41 @@ def train_search_phase(
                     "update_weights": True,
                 }
             )
+        end_time = timer()
+        logging.info(f"Architecture updates took {timedelta(seconds=(end_time - start_time))} hh:mm:ss.")
 
         optimizer.zero_grad()
         architect.zero_arch_var_grad()
         architect.set_model_alphas()
         architect.set_model_edge_weights()
-
+        start_time = timer()
         logits, logits_aux = model(input, discrete=args.search.discrete)
+        end_time = timer()
+        logging.info(f"Model inference took {timedelta(seconds=(end_time - start_time))} hh:mm:ss.")
         loss = criterion(logits, target)
         if args.train.auxiliary:
             loss_aux = criterion(logits_aux, target)
             loss += args.train.auxiliary_weight * loss_aux
-
+        start_time = timer()
         loss.backward()
+        end_time = timer()
+        logging.info(f"Backpropagation took {timedelta(seconds=(end_time - start_time))} hh:mm:ss.")
+        start_time = timer()
         nn.utils.clip_grad_norm(model.parameters(), args.train.grad_clip)
+        end_time = timer()
+        logging.info(f"Gradient clipping took {timedelta(seconds=(end_time - start_time))} hh:mm:ss.") 
+        start_time = timer()       
         optimizer.step()
+        end_time = timer()
+        logging.info(f"Weight updates took {timedelta(seconds=(end_time - start_time))} hh:mm:ss.")
 
+        start_time =timer()
         prec1, prec5 = train_utils.accuracy(logits, target, topk=(1, 5))
         objs.update(loss.item(), batch_size)
         top1.update(prec1.item(), batch_size)
         top5.update(prec5.item(), batch_size)
+        end_time = timer()
+        logging.info(f"Loss and metric updates took {timedelta(seconds=(end_time - start_time))} hh:mm:ss.")
 
         if step % args.run.report_freq == 0:
             logging.info(f"| Train | Batch: {step:3d} | Loss: {objs.avg:e} | Top1: {top1.avg} | Top5: {top5.avg} |")

@@ -1,7 +1,8 @@
 ﻿method:
     name: grid_search # used as directory name --> no invalid characters
     mode: search_only # search_only, evaluate_only, sequential
-    init_channels_to_check: [4, 8, 12, 16, 20, 24, 28, 32, 36, 40, 44, 48, 52, 56, 60]
+    #init_channels_to_check: [4, 8, 12, 16, 20, 24, 28, 32, 36, 40, 44, 48, 52, 56, 60]
+    init_channels_to_check: [4, 8]
     use_search_channels_for_evaluation: true    # use the same number of init_channels for search and evaluation
 
 hydra:
