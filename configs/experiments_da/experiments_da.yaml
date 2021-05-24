@@ -60,7 +60,7 @@ train_eval_phase:
     scheduler: cosine
     lr_anneal_cycles: 1
     smooth_cross_entropy: false
-    batch_size: 256
+    batch_size: 128
     learning_rate: 0.025
     learning_rate_min: 0.0
     momentum: 0.9
@@ -84,7 +84,8 @@ run_eval_phase:
     scheduler_epochs: ${run_eval_phase.epochs}
     n_threads_data: 0
     report_freq: 50
-    gpu: 0
+    gpu: 0 # [0, 1, 2, 3, 4, 5] # gets superseeded by number_gpus
+    number_gpus: ???
 
 
 hydra:

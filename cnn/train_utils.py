@@ -286,10 +286,11 @@ def create_nasbench_201_data_queues(args, eval_split=False):
 def get_cifar10_data_sets(args):
     """Creates and returns the CIFAR-10 dataset. 
     Useful if one wants to create per-epoch data loaders.
+    Difference between train and validation / test preprocessing is that train data are augmented (e.g. random crop),
+        while validation / test data are not
 
     Args:
         args (OmegaConf): Arguments
-        evaluation_mode (bool): Whether the datasets are used for search or evaluation.
 
     Returns:
         torchvision.dataset: Train dataset
@@ -563,7 +564,8 @@ def save(
     s3_bucket=None,
     runtime=0.0,
     best_observed=None,
-    best_eval=False
+    best_eval=False,
+    multi_process=False
 ):
     """
     Create checkpoint and save to directory.
@@ -584,13 +586,17 @@ def save(
             This is also used during evaluation (with genotype related values set to None).
         best_eval (bool): Whether the checkpoint is created for the best currently observed weights during evaluation.
             This means that the checkpoint is saved with a dedicated name (model_best.ckpt).
+        multi_process (bool): Whether saving is done from a multi-processed environment. In this case, the saving routine
+            needs slight adaptation.
+            Currently unused. If errors happen, use it again, see https://pytorch.org/tutorials/intermediate/ddp_tutorial.html
+                and https://pytorch.org/tutorials/beginner/saving_loading_models.html
     """
 
     checkpoint = {
         "epochs": epochs,
         "rng_seed": rng_seed.get_save_states(),
         "optimizer": optimizer.state_dict(),
-        "model": model.get_save_states(),
+        "model": model.get_save_states(), #{"state_dict": model.module.state_dict()} if multi_process else model.get_save_states(),   # hack to work with distributed data parallel
         "runtime": runtime
     }
 
@@ -645,7 +651,8 @@ def load(
     optimizer, 
     architect=None, 
     s3_bucket=None,
-    best_eval=False
+    best_eval=False,
+    gpu=None
 ):
     """Loads checkpoint
 
@@ -663,6 +670,7 @@ def load(
         best_eval (bool): Whether the best checkpoint from evaluation should be loaded.
             This will search for a checkpoint called 'model_best.ckpt' instead of 'model.ckpt'.
             If no such file is found, an error is raised.
+        gpu (int or None): For multi-process loading specifies to which gpu the memory should be mapped.
 
     Returns:
         int: Epochs
@@ -692,7 +700,9 @@ def load(
         # TODO: update architecture history
         architect.load_history(history)
 
-    checkpoint = torch.load(ckpt)
+    if gpu is not None:
+        map_location = {'cuda:%d' % 0: 'cuda:%d' % gpu}
+    checkpoint = torch.load(ckpt) if gpu is None else torch.load(ckpt, map_location=map_location)
 
     epochs = checkpoint["epochs"]
     rng_seed.load_states(checkpoint["rng_seed"])
@@ -716,7 +726,7 @@ def load(
     return epochs, history, runtime, best_observed
 
 
-def infer(valid_queue, model, criterion, report_freq=50, discrete=False):
+def infer(valid_queue, model, criterion, report_freq=50, discrete=False, rank=None):
     objs = AvgrageMeter()
     top1 = AvgrageMeter()
     top5 = AvgrageMeter()
@@ -730,8 +740,8 @@ def infer(valid_queue, model, criterion, report_freq=50, discrete=False):
     #    model.alphas_reduce.data = alphas_reduce
     with torch.no_grad():
         for step, (input, target) in enumerate(valid_queue):
-            input = Variable(input).cuda()
-            target = Variable(target).cuda()
+            input = Variable(input).cuda(non_blocking=True)
+            target = Variable(target).cuda(non_blocking=True)
 
             # if model.__class__.__name__ == "NetworkCIFAR":
             #    logits, _ = model(input)
@@ -747,7 +757,7 @@ def infer(valid_queue, model, criterion, report_freq=50, discrete=False):
             top1.update(prec1.item(), n)
             top5.update(prec5.item(), n)
 
-            if step % report_freq == 0:
+            if step % report_freq == 0 and (rank is None or rank == 0):
                 logging.info(f"| Validation | Batch: {step:3d} | Loss: {objs.avg:e} | Top1: {top1.avg} | Top5: {top5.avg} |")
     # if arch is not None:
     #    model.alphas_normal.data.copy_(normal_orig)
