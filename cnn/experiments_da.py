@@ -748,9 +748,9 @@ def evaluation_phase(rank, args, base_dir, genotype_init_channels, genotype_to_e
             optimizer,
             rank
         )
-        train_acc_tensor = torch.tensor(train_acc)
-        train_obj_tensor = torch.tensor(train_obj)
-        train_top5_tensor = torch.tensor(train_top5)
+        train_acc_tensor = torch.tensor(train_acc).cuda(rank)
+        train_obj_tensor = torch.tensor(train_obj).cuda(rank)
+        train_top5_tensor = torch.tensor(train_top5).cuda(rank)
         train_acc_mean = dist.reduce(train_acc_tensor, dst=0) / world_size
         train_obj_mean = dist.reduce(train_obj_tensor, dst=0) / world_size
         train_top5_mean = dist.reduce(train_top5_tensor, dst=0) / world_size
@@ -772,16 +772,16 @@ def evaluation_phase(rank, args, base_dir, genotype_init_channels, genotype_to_e
             criterion,
             report_freq=args.run.report_freq
         )
-        valid_acc_tensor = torch.tensor(valid_acc)
-        valid_obj_tensor = torch.tensor(valid_obj)
-        valid_top5_tensor = torch.tensor(valid_top5)
+        valid_acc_tensor = torch.tensor(valid_acc).cuda(rank)
+        valid_obj_tensor = torch.tensor(valid_obj).cuda(rank)
+        valid_top5_tensor = torch.tensor(valid_top5).cuda(rank)
         valid_acc_mean = dist.reduce(valid_acc_tensor, dst=0) / world_size
         valid_obj_mean = dist.reduce(valid_obj_tensor, dst=0) / world_size
         valid_top5_mean = dist.reduce(valid_top5_tensor, dst=0) / world_size
 
         # memory stats
-        mem_peak_allocated_MB = torch.tensor(torch.cuda.max_memory_allocated() / 1e6)
-        mem_peak_reserved_MB = torch.tensor(torch.cuda.max_memory_reserved() / 1e6)
+        mem_peak_allocated_MB = torch.tensor(torch.cuda.max_memory_allocated() / 1e6).cuda(rank)
+        mem_peak_reserved_MB = torch.tensor(torch.cuda.max_memory_reserved() / 1e6).cuda(rank)
 
         mem_peak_allocated_MB_mean = dist.reduce(mem_peak_allocated_MB, dst=0) / world_size
         mem_peak_reserved_MB_mean = dist.reduce(mem_peak_reserved_MB, dst=0) / world_size
@@ -835,8 +835,8 @@ def evaluation_phase(rank, args, base_dir, genotype_init_channels, genotype_to_e
         scheduler.step()
 
     # memory stats for result dict
-    mem_peak_allocated_MB = torch.tensor(torch.cuda.max_memory_allocated() / 1e6)
-    mem_peak_reserved_MB = torch.tensor(torch.cuda.max_memory_reserved() / 1e6)
+    mem_peak_allocated_MB = torch.tensor(torch.cuda.max_memory_allocated() / 1e6).cuda(rank)
+    mem_peak_reserved_MB = torch.tensor(torch.cuda.max_memory_reserved() / 1e6).cuda(rank)
 
     mem_peak_allocated_MB_mean = dist.reduce(mem_peak_allocated_MB, dst=0) / world_size
     mem_peak_reserved_MB_mean = dist.reduce(mem_peak_reserved_MB, dst=0) / world_size
