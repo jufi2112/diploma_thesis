@@ -606,7 +606,8 @@ def save(
         "epochs": epochs,
         "rng_seed": rng_seed.get_save_states(),
         "optimizer": optimizer.state_dict(),
-        "model": model.get_save_states(), #{"state_dict": model.module.state_dict()} if multi_process else model.get_save_states(),   # hack to work with distributed data parallel
+        "model": model.module.get_save_states() if multi_process else model.get_save_states(),
+        #model.get_save_states(), #{"state_dict": model.module.state_dict()} if multi_process else model.get_save_states(),   # hack to work with distributed data parallel
         "runtime": runtime
     }
 
