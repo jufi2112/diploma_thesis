@@ -6,6 +6,8 @@ import torch.backends.cudnn as cudnn
 import os
 import sys
 from distutils.dir_util import copy_tree
+
+from torch.nn.parallel.distributed import DistributedDataParallel
 import aws_utils
 import pickle
 from lr_schedulers import *
@@ -717,7 +719,10 @@ def load(
 
     epochs = checkpoint["epochs"]
     rng_seed.load_states(checkpoint["rng_seed"])
-    model.load_states(checkpoint["model"])
+    if type(model) == DistributedDataParallel:
+        model.module.load_states(checkpoint["model"])
+    else:
+        model.load_states(checkpoint["model"])
     optimizer.load_state_dict(checkpoint["optimizer"])
     if "runtime" in checkpoint.keys():
         runtime = checkpoint["runtime"]
