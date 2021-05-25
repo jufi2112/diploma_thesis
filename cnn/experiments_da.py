@@ -12,6 +12,7 @@ import json
 import torch
 import torch.nn as nn
 import torch.distributed as dist
+import torch.multiprocessing as mp
 from collections import namedtuple
 from copy import deepcopy
 
@@ -408,23 +409,49 @@ def grid_search(args):
             logging.info(f"init_channels={current_init_channels} not yet evaluated. Starting evaluation...")
             if args.method.use_search_channels_for_evaluation:
                 args.train.init_channels = current_init_channels
+
+            result_queue = mp.Queue()
             
             try:
-                (
-                    checkpoint_path,
-                    best_weights_train_time,
-                    best_weights_train_acc,
-                    best_weights_valid_acc,
-                    single_training_time,
-                    max_mem_allocated_MB,
-                    max_mem_reserved_MB,
-                    total_params
-                ) = evaluation_phase(
-                    args,
-                    base_dir_eval,
-                    current_init_channels,
-                    search_history[current_init_channels]['best_genotype']
+                #(
+                #    checkpoint_path,
+                #    best_weights_train_time,
+                #    best_weights_train_acc,
+                #    best_weights_valid_acc,
+                #    single_training_time,
+                #    max_mem_allocated_MB,
+                #    max_mem_reserved_MB,
+                #    total_params
+                #) = 
+                os.environ['MASTER_ADDR'] = 'localhost'
+                os.environ['MASTER_PORT'] = train_utils.find_free_port()
+                mp.spawn(
+                    evaluation_phase,
+                    args=(
+                        args, 
+                        base_dir_eval, 
+                        current_init_channels, 
+                        search_history[current_init_channels]['best_genotype'], 
+                        result_queue
+                    ),
+                    nprocs=args.run.number_gpus
                 )
+                result = result_queue.get()
+                checkpoint_path = result['checkpoint_path']
+                best_weights_train_time = result['runtime_best_observed']
+                best_weights_train_acc = result['train_acc_best_observed']
+                best_weights_valid_acc = result['valid_acc_best_observed']
+                single_training_time = result['overall_runtime']
+                max_mem_allocated_MB = result['max_mem_allocated_MB']
+                max_mem_reserved_MB = result['max_mem_reserved_MB']
+                total_params = result['total_params']
+                del result  # might not be necessary since this should not contain a shared-memory tensor
+                #evaluation_phase(
+                #    args,
+                #    base_dir_eval,
+                #    current_init_channels,
+                #    search_history[current_init_channels]['best_genotype']
+                #)
             except Exception as e:
                 logging.info(f"Encountered the following exception during evaluation: {e}")
                 logging.info("Continuing with next step.")
@@ -467,12 +494,13 @@ def grid_search(args):
         return search_history, eval_history, overall_runtime_search_phase, overall_runtime_eval_phase
 
 
-def evaluation_phase(args, base_dir, genotype_init_channels, genotype_to_evaluate, rank):
+def evaluation_phase(rank, args, base_dir, genotype_init_channels, genotype_to_evaluate, result_queue):
     """Fully trains a provided genotype
     Code is mostly copied from train_final.py but modified to work for my experiments.
     Best weights are selected according to validation accuracy.
 
     Args:
+        rank (int): Rank for multi-processing. Corresponds to the GPU that should be utilized
         args (OmegaConf): Arguments
         base_dir (str): Path to the base directory the evaluation phase should work in.
         genotype_init_channels (int): Initial number of channels the genotype was searched with.
@@ -480,7 +508,7 @@ def evaluation_phase(args, base_dir, genotype_init_channels, genotype_to_evaluat
             This does NOT influence init_channels for evaluation phase, this is controlled via args.train.init_channels!
         genotype_to_evaluate (Genotype or str): Genotype that should be evaluated.
             A string is interpreted as path to a json file that contains the genotype that should be evaluated.
-        rank (int): Rank for multi-processing. Corresponds to the GPU that should be utilized
+        result_queue (torch.multiprocessing.Queue): Queue where the results of the evaluation phase should be stored to.
 
     Returns:
         str: Path to checkpoint that contains the best weights.
@@ -646,6 +674,7 @@ def evaluation_phase(args, base_dir, genotype_init_channels, genotype_to_evaluat
         genotype_to_evaluate
     )
     model = model.cuda(rank)
+    model = nn.SyncBatchNorm.convert_sync_batchnorm(model)  # Converts BatchNorm layers to synced batchnorm layers
     model = nn.parallel.DistributedDataParallel(
         model,
         device_ids=[rank]
@@ -803,6 +832,13 @@ def evaluation_phase(args, base_dir, genotype_init_channels, genotype_to_evaluat
 
         scheduler.step()
 
+    # memory stats for result dict
+    mem_peak_allocated_MB = torch.tensor(torch.cuda.max_memory_allocated() / 1e6)
+    mem_peak_reserved_MB = torch.tensor(torch.cuda.max_memory_reserved() / 1e6)
+
+    mem_peak_allocated_MB_mean = dist.reduce(mem_peak_allocated_MB, dst=0) / world_size
+    mem_peak_reserved_MB_mean = dist.reduce(mem_peak_reserved_MB, dst=0) / world_size
+
     if rank == 0:
         train_end_time = timer()
         overall_runtime = train_end_time - train_start_time + previous_runtime
@@ -820,20 +856,22 @@ def evaluation_phase(args, base_dir, genotype_init_channels, genotype_to_evaluat
             
         # before return, remove logging filehandler of current logfile, so that the following logs aren't written in the current log
         logging.getLogger().removeHandler(logging.getLogger().handlers[-1])
-        dist.destroy_process_group()
-        return (
-            os.path.join(checkpoint_dir, 'model_best.ckpt'),
-            best_observed['runtime'],
-            best_observed['train'],
-            best_observed['valid'],
-            overall_runtime,
-            torch.cuda.max_memory_allocated() / 1e6,
-            torch.cuda.max_memory_reserved() / 1e6,
-            total_params
-        )
+        result_dict = {
+            'checkpoint_path': os.path.join(checkpoint_dir, 'model_best.ckpt'),
+            'runtime_best_observed': best_observed['runtime'],
+            'train_acc_best_observed': best_observed['train'],
+            'valid_acc_best_observed': best_observed['valid'],
+            'overall_runtime': overall_runtime,
+            'max_mem_allocated_MB': mem_peak_allocated_MB_mean,
+            'max_mem_reserved_MB': mem_peak_reserved_MB_mean,
+            'total_params': total_params
+        }
+        result_queue.put(result_dict)
+        dist.barrier()
     else:
-        dist.destroy_process_group()
-        return
+        dist.barrier()
+    dist.destroy_process_group()
+    return
     
 
 def search_phase(args, base_dir):
