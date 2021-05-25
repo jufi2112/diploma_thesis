@@ -520,8 +520,6 @@ def evaluation_phase(rank, args, base_dir, genotype_init_channels, genotype_to_e
         float: Maximum memory reserved in MB.
         int: Number of model parameters.
     """
-    # Create folder structure
-    #base_dir = os.path.join(os.getcwd(), "evaluation_phase_seed_" + str(args.run.seed))
     world_size = args.run.number_gpus
     dist.init_process_group(
         backend="nccl",
@@ -529,6 +527,7 @@ def evaluation_phase(rank, args, base_dir, genotype_init_channels, genotype_to_e
         world_size=world_size,
         rank=rank
     )
+    # Create folder structure
     if rank == 0:
         log_dir = os.path.join(base_dir, "logs")
         tensorboard_dir = os.path.join(base_dir, "tensorboard")
@@ -690,7 +689,7 @@ def evaluation_phase(rank, args, base_dir, genotype_init_channels, genotype_to_e
     # Check if we've already trained
     try:
         start_epochs, _, previous_runtime, best_observed = train_utils.load(
-            checkpoint_dir, rng_seed, model, optimizer, s3_bucket=None
+            checkpoint_dir, rng_seed, model, optimizer, s3_bucket=None, gpu=rank
         )
         if best_observed is None:
             best_observed = {
