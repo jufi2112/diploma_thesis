@@ -751,11 +751,14 @@ def evaluation_phase(rank, args, base_dir, genotype_init_channels, genotype_to_e
         train_acc_tensor = torch.tensor(train_acc).cuda(rank)
         train_obj_tensor = torch.tensor(train_obj).cuda(rank)
         train_top5_tensor = torch.tensor(train_top5).cuda(rank)
+        dist.reduce(train_acc_tensor, dst=0)
+        dist.reduce(train_obj_tensor, dst=0)
+        dist.reduce(train_top5_tensor, dst=0)
 
         if rank == 0:
-            train_acc_mean = dist.reduce(train_acc_tensor, dst=0) / world_size
-            train_obj_mean = dist.reduce(train_obj_tensor, dst=0) / world_size
-            train_top5_mean = dist.reduce(train_top5_tensor, dst=0) / world_size
+            train_acc_mean = train_acc_tensor / world_size
+            train_obj_mean = train_obj_tensor / world_size
+            train_top5_mean = train_top5_tensor / world_size
 
             logging.info(f"| train_acc: {train_acc_mean} |")
             # Log values
@@ -776,17 +779,24 @@ def evaluation_phase(rank, args, base_dir, genotype_init_channels, genotype_to_e
         valid_acc_tensor = torch.tensor(valid_acc).cuda(rank)
         valid_obj_tensor = torch.tensor(valid_obj).cuda(rank)
         valid_top5_tensor = torch.tensor(valid_top5).cuda(rank)
+
+        dist.reduce(valid_acc_tensor, dst=0)
+        dist.reduce(valid_obj_tensor, dst=0)
+        dist.reduce(valid_top5_tensor, dst=0)
         
         # memory stats
         mem_peak_allocated_MB = torch.tensor(torch.cuda.max_memory_allocated() / 1e6).cuda(rank)
         mem_peak_reserved_MB = torch.tensor(torch.cuda.max_memory_reserved() / 1e6).cuda(rank)
 
+        dist.reduce(mem_peak_allocated_MB, dst=0)
+        dist.reduce(mem_peak_reserved_MB, dst=0)
+
         if rank == 0:
-            valid_acc_mean = dist.reduce(valid_acc_tensor, dst=0) / world_size
-            valid_obj_mean = dist.reduce(valid_obj_tensor, dst=0) / world_size
-            valid_top5_mean = dist.reduce(valid_top5_tensor, dst=0) / world_size
-            mem_peak_allocated_MB_mean = dist.reduce(mem_peak_allocated_MB, dst=0) / world_size
-            mem_peak_reserved_MB_mean = dist.reduce(mem_peak_reserved_MB, dst=0) / world_size
+            valid_acc_mean = valid_acc_tensor / world_size
+            valid_obj_mean = valid_obj_tensor / world_size
+            valid_top5_mean = valid_top5_tensor / world_size
+            mem_peak_allocated_MB_mean = mem_peak_allocated_MB / world_size
+            mem_peak_reserved_MB_mean = mem_peak_reserved_MB / world_size
             logging.info(f"| valid_acc: {valid_acc_mean} |")
             
             writer.add_scalar("Loss/valid", valid_obj_mean, epoch)
@@ -838,9 +848,12 @@ def evaluation_phase(rank, args, base_dir, genotype_init_channels, genotype_to_e
     mem_peak_allocated_MB = torch.tensor(torch.cuda.max_memory_allocated() / 1e6).cuda(rank)
     mem_peak_reserved_MB = torch.tensor(torch.cuda.max_memory_reserved() / 1e6).cuda(rank)
 
+    dist.reduce(mem_peak_allocated_MB, dst=0)
+    dist.reduce(mem_peak_reserved_MB, dst=0)
+
     if rank == 0:
-        mem_peak_allocated_MB_mean = dist.reduce(mem_peak_allocated_MB, dst=0) / world_size
-        mem_peak_reserved_MB_mean = dist.reduce(mem_peak_reserved_MB, dst=0) / world_size
+        mem_peak_allocated_MB_mean = mem_peak_allocated_MB / world_size
+        mem_peak_reserved_MB_mean = mem_peak_reserved_MB / world_size
         train_end_time = timer()
         overall_runtime = train_end_time - train_start_time + previous_runtime
         logging.info(f"\nTraining finished after {timedelta(seconds=overall_runtime)} hh:mm:ss.")
