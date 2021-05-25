@@ -187,7 +187,7 @@ def grid_search(args):
     logging.info(f"Starting grid search with mode: {args.method.mode}")
     logging.info(f"Available GPUs: {torch.cuda.device_count()}")
     for i in range(torch.cuda.device_count()):
-        logging.info(f"    Cuda device {i}: {torch.cuda.get_device_name(torch.cuda.device(i))}")
+        logging.info(f"    Cuda device {i}: {torch.cuda.get_device_name(i)}")
 
     overall_runtime_search_phase = 0.0  # measures the time spend search
     overall_runtime_eval_phase = 0.0    # measures the time spend evaluating

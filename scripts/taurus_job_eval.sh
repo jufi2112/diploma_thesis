@@ -30,11 +30,11 @@ python /scratch/ws/1/s8732099-da/git/gaea_release/cnn/experiments_da.py \
     run_eval_phase.data=/scratch/ws/1/s8732099-da/data \
     run_search_phase.autodl=/scratch/ws/1/s8732099-da/git/gaea_release/AutoDL-Projects \
     run_eval_phase.autodl=/scratch/ws/1/s8732099-da/git/gaea_release/AutoDL-Projects \
-    run_search_phase.n_threads_data=0 \ # not used, atm always hardcoded 0 
-    run_eval_phase.n_threads_data=0 \   # not used, atm always hardcoded 0
+    run_search_phase.n_threads_data=0 \
+    run_eval_phase.n_threads_data=0 \
     run_eval_phase.number_gpus=8 \
-    train_search_phase.batch_size=32 \  # Batch size 32 with 8 GPUs -> 32*8 = 256
-    train_eval_phase.batch_size=32 \    # Batch size 32 with 8 GPUs -> 32*8 = 256
-    hydra.run.dir=/scratch/ws/1/s8732099-da/experiments_da/exp_1_mgpu/v100/\${method.name}-batch_size_256    # hardcoded batch size
+    train_search_phase.batch_size=32 \
+    train_eval_phase.batch_size=32 \
+    hydra.run.dir=/scratch/ws/1/s8732099-da/experiments_da/exp_1_mgpu/v100/\${method.name}-batch_size_256
 
 exit 0
