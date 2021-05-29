@@ -388,8 +388,13 @@ def grid_search(args):
             return search_history, eval_history, overall_runtime_search_phase, overall_runtime_eval_phase
 
         # evaluation loop
-        for step, current_init_channels in enumerate(search_history.keys()):
-            logging.info(f"| Step {(step+1)} / {len(search_history.keys())} |")
+        for step, current_init_channels in enumerate(args.method.init_channels_to_check):#enumerate(search_history.keys()):
+            #logging.info(f"| Step {(step+1)} / {len(search_history.keys())} |")
+            logging.info(f"| Step {(step+1)} / {len(args.method.init_channels_to_check)} |")
+            # check if the desired init_channels value was already searched
+            if current_init_channels not in search_history.keys():
+                logging.info(f"init_channels={current_init_channels} not in search history. Please start the search phase first. Skipping...")
+                continue
             # check if it already exists in eval_history (would mean we already evaluated it)
             if current_init_channels in eval_history.keys():
                 logging.info(f"init_channels={current_init_channels} already in evaluation history. Skipping...")
