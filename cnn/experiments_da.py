@@ -169,7 +169,7 @@ def grid_search(args):
             )
         )
     cwd = os.getcwd()
-    log = os.path.join(cwd, f"log_grid_search_seed_{args.run_search_phase.seed}.txt")
+    log = os.path.join(cwd, f"log_grid_search_{args.method.mode}_seed_{args.run_search_phase.seed}.txt")
     train_utils.set_up_logging(log)
 
     logging.info(f"Hyperparameters: \n{args.pretty()}")
