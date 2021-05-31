@@ -886,7 +886,7 @@ def evaluation_phase(rank, args, base_dir, genotype_init_channels, genotype_to_e
             'total_params': total_params
         }
         result_queue.put(result_dict)
-
+    dist.barrier()
     dist.destroy_process_group()
     
 
