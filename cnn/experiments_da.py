@@ -819,8 +819,8 @@ def evaluation_phase(rank, args, base_dir, genotype_init_channels, genotype_to_e
 
             # Use validation accuracy to determine if we have obtained new best weights
             if valid_acc_mean > best_observed['valid']:
-                best_observed['train'] = train_acc_mean
-                best_observed['valid'] = valid_acc_mean
+                best_observed['train'] = train_acc_mean.item()
+                best_observed['valid'] = valid_acc_mean.item()
                 best_observed['epoch'] = epoch
                 best_observed['runtime'] = timer() - train_start_time + previous_runtime
 
