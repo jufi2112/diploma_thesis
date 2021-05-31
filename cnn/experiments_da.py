@@ -553,9 +553,9 @@ def evaluation_phase(rank, args, base_dir, genotype_init_channels, genotype_to_e
         # Tensorboard SummaryWriter setup
         tensorboard_writer_dir = os.path.join(tensorboard_dir, "init_channels_" + str(genotype_init_channels))
         writer = SummaryWriter(tensorboard_writer_dir)
-        dist.barrier()
-    else:
-        dist.barrier()
+    #    dist.barrier()
+    #else:
+    #    dist.barrier()
 
 
     #if not torch.cuda.is_available():
@@ -771,9 +771,9 @@ def evaluation_phase(rank, args, base_dir, genotype_init_channels, genotype_to_e
             writer.add_scalar("Top1/train", train_acc_mean.item(), epoch)
             writer.add_scalar("Top5/train", train_top5_mean.item(), epoch)
             writer.add_scalar("lr", scheduler.get_lr()[0], epoch)
-            dist.barrier()
-        else:
-            dist.barrier()
+        #    dist.barrier()
+        #else:
+        #    dist.barrier()
 
         valid_acc, valid_obj, valid_top5 = train_utils.infer(
             valid_queue,
@@ -843,9 +843,9 @@ def evaluation_phase(rank, args, base_dir, genotype_init_channels, genotype_to_e
                 best_observed=best_observed,
                 multi_process=True
             )
-            dist.barrier()
-        else:
-            dist.barrier()
+        #    dist.barrier()
+        #else:
+        #    dist.barrier()
 
         scheduler.step()
 
@@ -886,11 +886,8 @@ def evaluation_phase(rank, args, base_dir, genotype_init_channels, genotype_to_e
             'total_params': total_params
         }
         result_queue.put(result_dict)
-        dist.barrier()
-    else:
-        dist.barrier()
+
     dist.destroy_process_group()
-    return
     
 
 def search_phase(args, base_dir):
