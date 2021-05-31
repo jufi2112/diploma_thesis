@@ -445,7 +445,11 @@ def grid_search(args):
                     ),
                     nprocs=args.run.number_gpus
                 )
+                logging.info("Evaluation function completed successfully")
+                logging.info("Trying to get result object from queue")
                 result = result_queue.get()
+                logging.info("Got result object from queue")
+                logging.info("Extracting results from result object")
                 checkpoint_path = result['checkpoint_path']
                 best_weights_train_time = result['runtime_best_observed']
                 best_weights_train_acc = result['train_acc_best_observed']
@@ -454,6 +458,7 @@ def grid_search(args):
                 max_mem_allocated_MB = result['max_mem_allocated_MB']
                 max_mem_reserved_MB = result['max_mem_reserved_MB']
                 total_params = result['total_params']
+                logging.info("Deleting result object")
                 del result  # might not be necessary since this should not contain a shared-memory tensor
                 #evaluation_phase(
                 #    args,
