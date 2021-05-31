@@ -872,7 +872,7 @@ def evaluation_phase(rank, args, base_dir, genotype_init_channels, genotype_to_e
         logging.info(f"Train accuracy of best weights: {best_observed['train']} %")
         logging.info(f"Validation accuracy of best weights: {best_observed['valid']} %")
         logging.info(f"\nCheckpoint of best weights can be found in: {os.path.join(checkpoint_dir, 'model_best.ckpt')}")
-            
+        logging.info("Preparing result dict.")
         result_dict = {
             'checkpoint_path': os.path.join(checkpoint_dir, 'model_best.ckpt'),
             'runtime_best_observed': best_observed['runtime'],
@@ -883,6 +883,7 @@ def evaluation_phase(rank, args, base_dir, genotype_init_channels, genotype_to_e
             'max_mem_reserved_MB': mem_peak_reserved_MB_mean,
             'total_params': total_params
         }
+        logging.info("Trying to put result dict into queue.")
         result_queue.put(result_dict)
         logging.info("Put results in queue.")
         # before return, remove logging filehandler of current logfile, so that the following logs aren't written in the current log
