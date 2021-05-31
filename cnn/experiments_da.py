@@ -417,8 +417,9 @@ def grid_search(args):
             logging.info(f"init_channels={current_init_channels} not yet evaluated. Starting evaluation...")
             if args.method.use_search_channels_for_evaluation:
                 args.train.init_channels = current_init_channels
-
-            result_queue = mp.Queue()
+            smp = mp.get_context('spawn')
+            result_queue = smp.Queue()
+            #mp.Queue()
             
             try:
                 #(
@@ -879,8 +880,8 @@ def evaluation_phase(rank, args, base_dir, genotype_init_channels, genotype_to_e
             'train_acc_best_observed': best_observed['train'],
             'valid_acc_best_observed': best_observed['valid'],
             'overall_runtime': overall_runtime,
-            'max_mem_allocated_MB': mem_peak_allocated_MB_mean,
-            'max_mem_reserved_MB': mem_peak_reserved_MB_mean,
+            'max_mem_allocated_MB': mem_peak_allocated_MB_mean.item(),
+            'max_mem_reserved_MB': mem_peak_reserved_MB_mean.item(),
             'total_params': total_params
         }
         logging.info("Trying to put result dict into queue.")
