@@ -804,12 +804,12 @@ def evaluation_phase(rank, args, base_dir, genotype_init_channels, genotype_to_e
             mem_peak_reserved_MB_mean = mem_peak_reserved_MB / world_size
             logging.info(f"| valid_acc: {valid_acc_mean} |")
             
-            writer.add_scalar("Loss/valid", valid_obj_mean, epoch)
-            writer.add_scalar("Top1/valid", valid_acc_mean, epoch)
-            writer.add_scalar("Top5/valid", valid_top5_mean, epoch)
+            writer.add_scalar("Loss/valid", valid_obj_mean.item(), epoch)
+            writer.add_scalar("Top1/valid", valid_acc_mean.item(), epoch)
+            writer.add_scalar("Top5/valid", valid_top5_mean.item(), epoch)
 
-            writer.add_scalar("Mem/peak_allocated_MB", mem_peak_allocated_MB_mean, epoch)
-            writer.add_scalar("Mem/peak_reserved_MB", mem_peak_reserved_MB_mean, epoch)
+            writer.add_scalar("Mem/peak_allocated_MB", mem_peak_allocated_MB_mean.item(), epoch)
+            writer.add_scalar("Mem/peak_reserved_MB", mem_peak_reserved_MB_mean.item(), epoch)
 
             # Use validation accuracy to determine if we have obtained new best weights
             if valid_acc_mean > best_observed['valid']:
@@ -873,8 +873,6 @@ def evaluation_phase(rank, args, base_dir, genotype_init_channels, genotype_to_e
         logging.info(f"Validation accuracy of best weights: {best_observed['valid']} %")
         logging.info(f"\nCheckpoint of best weights can be found in: {os.path.join(checkpoint_dir, 'model_best.ckpt')}")
             
-        # before return, remove logging filehandler of current logfile, so that the following logs aren't written in the current log
-        logging.getLogger().removeHandler(logging.getLogger().handlers[-1])
         result_dict = {
             'checkpoint_path': os.path.join(checkpoint_dir, 'model_best.ckpt'),
             'runtime_best_observed': best_observed['runtime'],
@@ -886,6 +884,11 @@ def evaluation_phase(rank, args, base_dir, genotype_init_channels, genotype_to_e
             'total_params': total_params
         }
         result_queue.put(result_dict)
+        logging.info("Put results in queue.")
+        # before return, remove logging filehandler of current logfile, so that the following logs aren't written in the current log
+        logging.getLogger().removeHandler(logging.getLogger().handlers[-1])
+        print("Removed logger")
+
     dist.barrier()
     dist.destroy_process_group()
     
