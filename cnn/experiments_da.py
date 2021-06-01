@@ -419,7 +419,7 @@ def grid_search(args):
                 args.train.init_channels = current_init_channels
             smp = mp.get_context('spawn')
             result_queue = smp.Queue()
-            #mp.Queue()
+            #result_queue = mp.Queue()
             
             try:
                 #(
@@ -446,10 +446,7 @@ def grid_search(args):
                     nprocs=args.run.number_gpus
                 )
                 logging.info("Evaluation function completed successfully")
-                logging.info("Trying to get result object from queue")
                 result = result_queue.get()
-                logging.info("Got result object from queue")
-                logging.info("Extracting results from result object")
                 checkpoint_path = result['checkpoint_path']
                 best_weights_train_time = result['runtime_best_observed']
                 best_weights_train_acc = result['train_acc_best_observed']
@@ -458,7 +455,6 @@ def grid_search(args):
                 max_mem_allocated_MB = result['max_mem_allocated_MB']
                 max_mem_reserved_MB = result['max_mem_reserved_MB']
                 total_params = result['total_params']
-                logging.info("Deleting result object")
                 del result  # might not be necessary since this should not contain a shared-memory tensor
                 #evaluation_phase(
                 #    args,
@@ -878,7 +874,6 @@ def evaluation_phase(rank, args, base_dir, genotype_init_channels, genotype_to_e
         logging.info(f"Train accuracy of best weights: {best_observed['train']} %")
         logging.info(f"Validation accuracy of best weights: {best_observed['valid']} %")
         logging.info(f"\nCheckpoint of best weights can be found in: {os.path.join(checkpoint_dir, 'model_best.ckpt')}")
-        logging.info("Preparing result dict.")
         result_dict = {
             'checkpoint_path': os.path.join(checkpoint_dir, 'model_best.ckpt'),
             'runtime_best_observed': best_observed['runtime'],
@@ -889,12 +884,9 @@ def evaluation_phase(rank, args, base_dir, genotype_init_channels, genotype_to_e
             'max_mem_reserved_MB': mem_peak_reserved_MB_mean.item(),
             'total_params': total_params
         }
-        logging.info("Trying to put result dict into queue.")
         result_queue.put(result_dict)
-        logging.info("Put results in queue.")
         # before return, remove logging filehandler of current logfile, so that the following logs aren't written in the current log
         logging.getLogger().removeHandler(logging.getLogger().handlers[-1])
-        print("Removed logger")
 
     #dist.barrier()
     dist.destroy_process_group()
