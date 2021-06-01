@@ -240,7 +240,7 @@ def setup_optimizer(model, args, train_queue_size=None):
                 optimizer,
                 args.train.learning_rate * (args.run.number_gpus or 1),   # args.run.number_gpus returns None if it does not exist
                 epochs=args.run.scheduler_epochs,
-                steps_per_epoch=len(train_queue_size),
+                steps_per_epoch=train_queue_size,
                 pct_start=(args.train.lr_warm_up_percentage or 0.1),
                 div_factor=(args.run.number_gpus or 1),
                 final_div_factor=(args.train.lr_final_factor or 1e6)
