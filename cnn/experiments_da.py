@@ -896,7 +896,7 @@ def evaluation_phase(rank, args, base_dir, genotype_init_channels, genotype_to_e
         logging.getLogger().removeHandler(logging.getLogger().handlers[-1])
         print("Removed logger")
 
-    dist.barrier()
+    #dist.barrier()
     dist.destroy_process_group()
     
 
