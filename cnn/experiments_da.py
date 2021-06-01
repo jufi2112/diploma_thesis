@@ -694,7 +694,7 @@ def evaluation_phase(rank, args, base_dir, genotype_init_channels, genotype_to_e
         total_params = sum(x.data.nelement() for x in model.parameters())
         logging.info(f"Total parameters of model: {total_params}")
 
-    optimizer, scheduler = train_utils.setup_optimizer(model, args)
+    optimizer, scheduler = train_utils.setup_optimizer(model, args, len(train_queue))
 
     # Check if we've already trained
     try:
@@ -710,7 +710,7 @@ def evaluation_phase(rank, args, base_dir, genotype_init_channels, genotype_to_e
                 "genotype_dict": None,  # not used, but needs to be in the dict for compatibility with search phase
                 "runtime": 0.0          # runtime after which the best epoch was observed
             }
-        scheduler.last_epoch = start_epochs - 1
+        scheduler.last_epoch = ((start_epochs - 1) * len(train_queue)) if args.train.scheduler == "cosine_mgpu" else (start_epochs - 1)
         if rank == 0:
             logging.info(
                 (
@@ -744,7 +744,7 @@ def evaluation_phase(rank, args, base_dir, genotype_init_channels, genotype_to_e
         train_queue.sampler.set_epoch(epoch)
         valid_queue.sampler.set_epoch(epoch)
         if rank == 0:
-            logging.info(f"| Epoch: {epoch:4d}/{args.run.epochs} | lr: {scheduler.get_lr()[0]} |")
+            logging.info(f"| Epoch: {epoch:4d}/{args.run.epochs} | lr: {scheduler.get_last_lr()[0]} |")
         model.drop_path_prob = args.train.drop_path_prob * epoch / args.run.epochs
 
         train_acc, train_obj, train_top5 = train_evaluation_phase(
@@ -753,6 +753,7 @@ def evaluation_phase(rank, args, base_dir, genotype_init_channels, genotype_to_e
             model,
             criterion,
             optimizer,
+            scheduler,
             rank
         )
         train_acc_tensor = torch.tensor(train_acc).cuda(rank)
@@ -772,7 +773,7 @@ def evaluation_phase(rank, args, base_dir, genotype_init_channels, genotype_to_e
             writer.add_scalar("Loss/train", train_obj_mean.item(), epoch)
             writer.add_scalar("Top1/train", train_acc_mean.item(), epoch)
             writer.add_scalar("Top5/train", train_top5_mean.item(), epoch)
-            writer.add_scalar("lr", scheduler.get_lr()[0], epoch)
+            writer.add_scalar("lr", scheduler.get_last_lr()[0], epoch)
         #    dist.barrier()
         #else:
         #    dist.barrier()
@@ -848,8 +849,8 @@ def evaluation_phase(rank, args, base_dir, genotype_init_channels, genotype_to_e
         #    dist.barrier()
         #else:
         #    dist.barrier()
-
-        scheduler.step()
+        if args.train.scheduler != "cosine_mgpu":
+            scheduler.step()
 
     # memory stats for result dict
     mem_peak_allocated_MB = torch.tensor(torch.cuda.max_memory_allocated() / 1e6).cuda(rank)
@@ -1063,7 +1064,7 @@ def search_phase(args, base_dir):
             architect,
             args.run.s3_bucket
         )
-        scheduler.last_epoch = start_epochs - 1
+        scheduler.last_epoch = ((start_epochs -1) * len(train_queue)) if args.train.scheduler == "cosine_mgpu" else (start_epochs - 1)
         if best_observed is None:
             best_observed = {
                 "train": 0.0,           # for single-level search, used to keep track of best genotype
@@ -1102,7 +1103,7 @@ def search_phase(args, base_dir):
 
     # Train loop
     for epoch in range(start_epochs, args.run.epochs):
-        lr = scheduler.get_lr()[0]
+        lr = scheduler.get_last_lr()[0]
         logging.info(f"| Epoch: {epoch:3d} / {args.run.epochs} | lr: {lr} |")
 
         model.drop_path_prob = args.train.drop_path_prob * epoch / args.run.epochs
@@ -1135,7 +1136,7 @@ def search_phase(args, base_dir):
         # training returns top1, loss and top5
         train_acc, train_obj, train_top5 = train_search_phase(
             args, train_queue, train_2_queue if args.search.single_level else valid_queue,
-            model, architect, criterion, optimizer, lr,
+            model, architect, criterion, optimizer, scheduler, lr,
         )
         architect.baseline = train_obj
         architect.update_history()
@@ -1227,7 +1228,8 @@ def search_phase(args, base_dir):
             best_observed=best_observed
         )
 
-        scheduler.step()
+        if args.train.scheduler != "cosine_mgpu":
+            scheduler.step()
 
     train_end_time = timer()
     overall_runtime = train_end_time - train_start_time - overall_visualization_time + previous_runtime
@@ -1284,6 +1286,7 @@ def train_search_phase(
     architect,
     criterion,
     optimizer,
+    scheduler,
     lr,
     random_arch=False
 ):
@@ -1301,6 +1304,7 @@ def train_search_phase(
         architect (Architect): Architect that should be used to update architecture parameters.
         criterion (callable): Loss that should be utilized for weight updates.
         optimizer: The optimizer that should be utilized for weight updates.
+        scheduler: The learning rate scheduler. Needed in case of cosine_mgpu.
         lr (float): Current learning rate.
         random_arch (bool): Should a random architecture be returned.
             TODO: Might not work at the moment.
@@ -1360,6 +1364,8 @@ def train_search_phase(
         loss.backward()
         nn.utils.clip_grad_norm(model.parameters(), args.train.grad_clip)
         optimizer.step()
+        if args.train.scheduler == "cosine_mgpu":
+            scheduler.step()
 
         prec1, prec5 = train_utils.accuracy(logits, target, topk=(1, 5))
         objs.update(loss.item(), batch_size)
@@ -1378,6 +1384,7 @@ def train_evaluation_phase(
     model,
     criterion,
     optimizer,
+    scheduler,
     rank
 ):
     """Train routine for architecture evaluation phase.
@@ -1388,6 +1395,7 @@ def train_evaluation_phase(
         model (torch.nn.Module): The model that should be trained.
         criterion (callable): Loss that should be used for weight updates.
         optimizer: The optimizer that should be used for weight updates.
+        scheduler: The learning rate scheduler. Needed in case of cosine_mgpu.
         rank (int): Rank of the current process
 
     Returns:
@@ -1417,6 +1425,8 @@ def train_evaluation_phase(
         loss.backward()         # calculates dloss / dx for every parameter x
         nn.utils.clip_grad_norm_(model.parameters(), args.train.grad_clip)
         optimizer.step()        # performs gradient update for every x
+        if args.train.scheduler == "cosine_mgpu":
+            scheduler.step()
 
         prec1, prec5 = train_utils.accuracy(logits, target, topk=(1, 5))
         batch_size = data.size(0)

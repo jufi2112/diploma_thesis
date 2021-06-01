@@ -196,7 +196,15 @@ def cross_entropy_with_label_smoothing(pred, target, eta=0.1):
     return cross_entropy_for_onehot(pred, onehot_target)
 
 
-def setup_optimizer(model, args):
+def setup_optimizer(model, args, train_queue_size=None):
+    """Creates and returns optimizer and learning rate scheduler
+
+    Args:
+        model (nn.Module): The model
+        args (OmegaConf): Arguments
+        train_queue_size(int or None): Size of the train queue.
+            Only relevant if cosine_mgpu is selected as learning rate scheduler.
+    """
     optimizer = torch.optim.SGD(
         model.parameters(),
         args.train.learning_rate,
@@ -227,9 +235,19 @@ def setup_optimizer(model, args):
             scheduler = CosinePowerAnnealing(
                 optimizer, 2, lr_anneal_cycles, min_lr, args.run.scheduler_epochs
             )
+        elif args.train.scheduler == "cosine_mgpu":
+            scheduler = torch.optim.lr_scheduler.OneCycleLR(
+                optimizer,
+                args.train.learning_rate * (args.run.number_gpus or 1),   # args.run.number_gpus returns None if it does not exist
+                epochs=args.run.scheduler_epochs,
+                steps_per_epoch=len(train_queue_size),
+                pct_start=(args.train.lr_warm_up_percentage or 0.1),
+                div_factor=(args.run.number_gpus or 1),
+                final_div_factor=(args.train.lr_final_factor or 1e6)
+            )
         else:
             raise NotImplementedError(
-                "lr scheduler not implemented, please select one from [cosine, powercosine, triangle]"
+                "lr scheduler not implemented, please select one from [cosine, powercosine, cosine_mgpu, triangle]"
             )
 
     return optimizer, scheduler
