@@ -417,6 +417,8 @@ def grid_search(args):
             logging.info(f"init_channels={current_init_channels} not yet evaluated. Starting evaluation...")
             if args.method.use_search_channels_for_evaluation:
                 args.train.init_channels = current_init_channels
+            else:
+                args.train.init_channels = args.train_eval_phase.init_channels
             smp = mp.get_context('spawn')
             result_queue = smp.Queue()
             #result_queue = mp.Queue()
