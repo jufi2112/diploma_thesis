@@ -1205,8 +1205,8 @@ def search_phase(args, base_dir):
         # memory stats
         mem_peak_allocated_MB = torch.cuda.max_memory_allocated() / 1e6
         mem_peak_reserved_MB = torch.cuda.max_memory_reserved() / 1e6
-        writer.add_scalar("Mem/peak_allocated_MB", mem_peak_allocated_MB, epoch)
-        writer.add_scalar("Mem/peak_reserved_MB", mem_peak_reserved_MB, epoch)
+        own_writer.add_scalar("Mem/peak_allocated_MB", mem_peak_allocated_MB, epoch)
+        own_writer.add_scalar("Mem/peak_reserved_MB", mem_peak_reserved_MB, epoch)
 
         if (args.search.single_level and train_acc > best_observed['train']) or (not args.search.single_level and valid_acc > best_observed['valid']):
                 best_observed['train'] = train_acc
