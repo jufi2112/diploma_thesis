@@ -245,7 +245,7 @@ def grid_search(args):
                         single_search_time,
                         max_mem_allocated_MB,
                         max_mem_reserved_MB
-                    ) = search_phase(args, base_dir_search)
+                    ) = search_phase(args, base_dir_search, 'init_channels')
                 except Exception as e:
                     logging.info(f"Encountered the following exception during search: {e}")
                     logging.info("Continuing with next step")
@@ -295,6 +295,7 @@ def grid_search(args):
             if args.method.mode == "search_only":
                 continue
 
+            raise ValueError("This code is not supported anymore and will be deleted")
             # evaluate the obtained genotype
             if current_init_channels in eval_history.keys():
                 logging.info(f"init_channels={current_init_channels} already in evaluation history. Skipping...")
@@ -319,8 +320,10 @@ def grid_search(args):
                     ) = evaluation_phase(
                         args,
                         base_dir_eval,
-                        current_init_channels,
-                        search_history[current_init_channels]['best_genotype']
+                        'init_channels',
+                        search_history[current_init_channels]['best_genotype'],
+                        None,
+                        current_init_channels
                     )
                 except Exception as e:
                     logging.info(f"Encountered the following exception during evaluation: {e}")
@@ -440,10 +443,11 @@ def grid_search(args):
                     evaluation_phase,
                     args=(
                         args, 
-                        base_dir_eval, 
-                        current_init_channels, 
+                        base_dir_eval,
+                        'init_channels', 
                         search_history[current_init_channels]['best_genotype'], 
-                        result_queue
+                        result_queue,
+                        current_init_channels
                     ),
                     nprocs=args.run.number_gpus
                 )
@@ -506,7 +510,7 @@ def grid_search(args):
         return search_history, eval_history, overall_runtime_search_phase, overall_runtime_eval_phase
 
 
-def evaluation_phase(rank, args, base_dir, genotype_init_channels, genotype_to_evaluate, result_queue):
+def evaluation_phase(rank, args, base_dir, run_id, genotype_to_evaluate, result_queue, genotype_init_channels=None):
     """Fully trains a provided genotype
     Code is mostly copied from train_final.py but modified to work for my experiments.
     Best weights are selected according to validation accuracy.
@@ -515,12 +519,14 @@ def evaluation_phase(rank, args, base_dir, genotype_init_channels, genotype_to_e
         rank (int): Rank for multi-processing. Corresponds to the GPU that should be utilized
         args (OmegaConf): Arguments
         base_dir (str): Path to the base directory the evaluation phase should work in.
-        genotype_init_channels (int): Initial number of channels the genotype was searched with.
-            Gets used as ID for different evaluation runs.
-            This does NOT influence init_channels for evaluation phase, this is controlled via args.train.init_channels!
+        run_id (str): Identifier to distinguish multiple runs.
         genotype_to_evaluate (Genotype or str): Genotype that should be evaluated.
             A string is interpreted as path to a json file that contains the genotype that should be evaluated.
         result_queue (torch.multiprocessing.Queue): Queue where the results of the evaluation phase should be stored to.
+        genotype_init_channels (int): Initial number of channels the genotype was searched with.
+            If specified along with run_id == 'init_channels', will get used as ID for different evaluation runs.
+            You can leave this at None if run_id != 'init_channels'.
+            This does NOT influence init_channels for evaluation phase, this is controlled via args.train.init_channels!
 
     Returns:
         str: Path to checkpoint that contains the best weights.
@@ -541,21 +547,25 @@ def evaluation_phase(rank, args, base_dir, genotype_init_channels, genotype_to_e
     )
     # Create folder structure
     if rank == 0:
+        try:
+            run_identifier = f"{run_id}_{str(genotype_init_channels) if (run_id == 'init_channels' and genotype_init_channels) else str(args.train[run_id])}"
+        except KeyError:
+            run_identifier = f"invalid_run_id_{run_id}"
         log_dir = os.path.join(base_dir, "logs")
         tensorboard_dir = os.path.join(base_dir, "tensorboard")
-        checkpoint_dir = os.path.join(base_dir, "checkpoints", "checkpoint_init_channels_" + str(genotype_init_channels))
+        checkpoint_dir = os.path.join(base_dir, "checkpoints", f"checkpoint_{run_identifier}")
 
         for directory in [log_dir, tensorboard_dir, checkpoint_dir]:
             os.makedirs(directory, exist_ok=True)
 
         # Log file for the current evaluation phase
-        logfile = os.path.join(log_dir, "log_init_channels_" + str(genotype_init_channels) + ".txt")
+        logfile = os.path.join(log_dir, f"log_{run_identifier}.txt")
         train_utils.set_up_logging(logfile)
 
         logging.info(f"Hyperparameters: \n{args.pretty()}")
 
         # Tensorboard SummaryWriter setup
-        tensorboard_writer_dir = os.path.join(tensorboard_dir, "init_channels_" + str(genotype_init_channels))
+        tensorboard_writer_dir = os.path.join(tensorboard_dir, run_identifier)
         writer = SummaryWriter(tensorboard_writer_dir)
     #    dist.barrier()
     #else:
@@ -738,7 +748,8 @@ def evaluation_phase(rank, args, base_dir, genotype_init_channels, genotype_to_e
 
     if rank == 0:
         logging.info(f"Evaluation phase started for genotype: \n{genotype_to_evaluate}")
-        logging.info(f"The genotype was searched with init_channels = {genotype_init_channels}")
+        if genotype_init_channels:
+            logging.info(f"The genotype was searched with init_channels = {genotype_init_channels}")
         train_start_time = timer()
 
     # Train loop
@@ -895,7 +906,7 @@ def evaluation_phase(rank, args, base_dir, genotype_init_channels, genotype_to_e
     dist.destroy_process_group()
     
 
-def search_phase(args, base_dir):
+def search_phase(args, base_dir, run_id):
     """Performs NAS.
     Code is mostly copied from train_search.py but modified to only work with GAEA PC-DARTS.
     Best genotype is selected according to training accuracy for single-level search and according to validation
@@ -904,6 +915,7 @@ def search_phase(args, base_dir):
     Args:
         args (OmegaConf): Arguments.
         base_dir (str): Path to the base directory that the search phase should work in.
+        run_id (str): Identifier to distinguish multiple runs.
 
     Returns:
         Genotype: Best found genotype.
@@ -915,24 +927,28 @@ def search_phase(args, base_dir):
         float: Maximum memory reserved in MB.
     """
     # Create folder structure
-    #base_dir = os.path.join(os.getcwd(), "search_phase_seed_" + str(args.run.seed))
+    try:
+        run_identifier = f"{run_id}_{str(args.train[run_id])}"
+    except KeyError:
+        run_identifier = f"invalid_run_id_{run_id}"
+
     log_dir = os.path.join(base_dir, "logs")
     summary_dir = os.path.join(base_dir, "summary")
     tensorboard_dir = os.path.join(base_dir, "tensorboard")
     genotype_dir = os.path.join(base_dir, "genotypes")
-    checkpoint_dir = os.path.join(base_dir, "checkpoints", "checkpoint_init_channels_" + str(args.train.init_channels))
+    checkpoint_dir = os.path.join(base_dir, "checkpoints", f"checkpoint_{run_identifier}")
     for directory in [log_dir, summary_dir, tensorboard_dir, genotype_dir, checkpoint_dir]:
         os.makedirs(directory, exist_ok=True)
 
     # Log file for the current search phase
-    logfile = os.path.join(log_dir, "log_init_channels_" + str(args.train.init_channels) + ".txt")
+    logfile = os.path.join(log_dir, f"log_{run_identifier}.txt")
     train_utils.set_up_logging(logfile)
 
     logging.info(f"Hyperparameters: \n{args.pretty()}")
 
     # Setup SummaryWriters
-    summary_writer_dir = os.path.join(summary_dir, "init_channels_" + str(args.train.init_channels))
-    tensorboard_writer_dir = os.path.join(tensorboard_dir, "init_channels_" + str(args.train.init_channels))
+    summary_writer_dir = os.path.join(summary_dir, run_identifier)
+    tensorboard_writer_dir = os.path.join(tensorboard_dir, run_identifier)
     writer = SummaryWriter(summary_writer_dir)
     # own writer that I use to keep track of interesting variables
     own_writer = SummaryWriter(tensorboard_writer_dir)
@@ -1258,7 +1274,7 @@ def search_phase(args, base_dir):
     logging.info(f"Genotype: {best_observed['genotype_raw']}")
 
     # dump best genotype to json file, so that we can load it during evaluation phase
-    genotype_file_path = os.path.join(genotype_dir, "genotype_init_channels_" + str(args.train.init_channels) + ".json")
+    genotype_file_path = os.path.join(genotype_dir, f"genotype_{run_identifier}.json")
     with open(genotype_file_path, 'w') as genotype_file:
         json.dump(best_observed['genotype_dict'], genotype_file, indent=4)
 
@@ -1276,9 +1292,6 @@ def search_phase(args, base_dir):
         torch.cuda.max_memory_reserved() / 1e6
     )
     
-    
-        
-
 
 def train_search_phase(
     args,
