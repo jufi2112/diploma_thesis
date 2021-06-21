@@ -57,10 +57,12 @@ run_search_phase:
 
 train_eval_phase:
     arch: null   # not used in train_final.py
-    scheduler: cosine
+    scheduler: cosine_mgpu
     lr_anneal_cycles: 1
+    lr_warm_up_percentage: 0.05 # for cosine_mgpu only
+    lr_final_factor: 1000000    # by how much the final learning rate should be smaller than the initial learning rate, for cosine_mgpu only
     smooth_cross_entropy: false
-    batch_size: 256
+    batch_size: 128
     learning_rate: 0.025
     learning_rate_min: 0.0
     momentum: 0.9
@@ -84,7 +86,8 @@ run_eval_phase:
     scheduler_epochs: ${run_eval_phase.epochs}
     n_threads_data: 0
     report_freq: 50
-    gpu: 0
+    gpu: 0 # [0, 1, 2, 3, 4, 5] # gets superseeded by number_gpus
+    number_gpus: ???
 
 
 hydra:

@@ -11,6 +11,8 @@ import logging
 import json
 import torch
 import torch.nn as nn
+import torch.distributed as dist
+import torch.multiprocessing as mp
 from collections import namedtuple
 from copy import deepcopy
 
@@ -158,17 +160,24 @@ def grid_search(args):
         float: Overall runtime of the search phase in seconds.
         float: Overall runtime of the evaluation phase in seconds.
     """
+    # sequential grid search is no longer supported, since evaluating with multiple GPUs while only using 1 for search is not efficient
+    if args.method.mode == "sequential":
+        raise ValueError(
+            (
+                "Sequential grid search is no longer supported, because we use multiple GPUs for the evaluation phase",
+                " but only a single GPU during the search phase."
+            )
+        )
     cwd = os.getcwd()
-    log = os.path.join(cwd, f"log_grid_search_seed_{args.run_search_phase.seed}.txt")
+    log = os.path.join(cwd, f"log_grid_search_{args.method.mode}_seed_{args.run_search_phase.seed}.txt")
     train_utils.set_up_logging(log)
 
     logging.info(f"Hyperparameters: \n{args.pretty()}")
 
-    if not torch.cuda.is_available():
-        logging.error("No GPU device available")
-        sys.exit(-1)
-    torch.cuda.set_device(args.run_search_phase.gpu)
-    torch.backends.cudnn.benchmark=True
+    #if not torch.cuda.is_available():
+    #    logging.error("No GPU device available")
+    #    sys.exit(-1)
+    #torch.backends.cudnn.benchmark=True
 
     # overall directory (cwd) is set up by hydra
     # base directories for search and evaluation phases
@@ -176,13 +185,16 @@ def grid_search(args):
     base_dir_eval = os.path.join(cwd, "evaluation_phase_seed_" + str(args.run_eval_phase.seed))
 
     logging.info(f"Starting grid search with mode: {args.method.mode}")
+    logging.info(f"Available GPUs: {torch.cuda.device_count()}")
+    for i in range(torch.cuda.device_count()):
+        logging.info(f"    Cuda device {i}: {torch.cuda.get_device_name(i)}")
 
     overall_runtime_search_phase = 0.0  # measures the time spend search
     overall_runtime_eval_phase = 0.0    # measures the time spend evaluating
 
     # can have mode 'search_only'   - perform only search phase
     #               'evaluate_only' - perform only evaluation phase
-    #               'sequential'    - perform search phase followed by evaluation phase
+    #               'sequential'    - perform search phase followed by evaluation phase <-- not supported any longer
     if args.method.mode in ["search_only", "sequential"]:
         # Create base folders if they don't exist
         os.makedirs(base_dir_search, exist_ok=True)
@@ -405,23 +417,53 @@ def grid_search(args):
             logging.info(f"init_channels={current_init_channels} not yet evaluated. Starting evaluation...")
             if args.method.use_search_channels_for_evaluation:
                 args.train.init_channels = current_init_channels
+            else:
+                args.train.init_channels = args.train_eval_phase.init_channels
+            smp = mp.get_context('spawn')
+            result_queue = smp.Queue()
+            #result_queue = mp.Queue()
             
             try:
-                (
-                    checkpoint_path,
-                    best_weights_train_time,
-                    best_weights_train_acc,
-                    best_weights_valid_acc,
-                    single_training_time,
-                    max_mem_allocated_MB,
-                    max_mem_reserved_MB,
-                    total_params
-                ) = evaluation_phase(
-                    args,
-                    base_dir_eval,
-                    current_init_channels,
-                    search_history[current_init_channels]['best_genotype']
+                #(
+                #    checkpoint_path,
+                #    best_weights_train_time,
+                #    best_weights_train_acc,
+                #    best_weights_valid_acc,
+                #    single_training_time,
+                #    max_mem_allocated_MB,
+                #    max_mem_reserved_MB,
+                #    total_params
+                #) = 
+                os.environ['MASTER_ADDR'] = 'localhost'
+                os.environ['MASTER_PORT'] = train_utils.find_free_port()
+                mp.spawn(
+                    evaluation_phase,
+                    args=(
+                        args, 
+                        base_dir_eval, 
+                        current_init_channels, 
+                        search_history[current_init_channels]['best_genotype'], 
+                        result_queue
+                    ),
+                    nprocs=args.run.number_gpus
                 )
+                logging.info("Evaluation function completed successfully")
+                result = result_queue.get()
+                checkpoint_path = result['checkpoint_path']
+                best_weights_train_time = result['runtime_best_observed']
+                best_weights_train_acc = result['train_acc_best_observed']
+                best_weights_valid_acc = result['valid_acc_best_observed']
+                single_training_time = result['overall_runtime']
+                max_mem_allocated_MB = result['max_mem_allocated_MB']
+                max_mem_reserved_MB = result['max_mem_reserved_MB']
+                total_params = result['total_params']
+                del result  # might not be necessary since this should not contain a shared-memory tensor
+                #evaluation_phase(
+                #    args,
+                #    base_dir_eval,
+                #    current_init_channels,
+                #    search_history[current_init_channels]['best_genotype']
+                #)
             except Exception as e:
                 logging.info(f"Encountered the following exception during evaluation: {e}")
                 logging.info("Continuing with next step.")
@@ -464,12 +506,13 @@ def grid_search(args):
         return search_history, eval_history, overall_runtime_search_phase, overall_runtime_eval_phase
 
 
-def evaluation_phase(args, base_dir, genotype_init_channels, genotype_to_evaluate):
+def evaluation_phase(rank, args, base_dir, genotype_init_channels, genotype_to_evaluate, result_queue):
     """Fully trains a provided genotype
     Code is mostly copied from train_final.py but modified to work for my experiments.
     Best weights are selected according to validation accuracy.
 
     Args:
+        rank (int): Rank for multi-processing. Corresponds to the GPU that should be utilized
         args (OmegaConf): Arguments
         base_dir (str): Path to the base directory the evaluation phase should work in.
         genotype_init_channels (int): Initial number of channels the genotype was searched with.
@@ -477,6 +520,7 @@ def evaluation_phase(args, base_dir, genotype_init_channels, genotype_to_evaluat
             This does NOT influence init_channels for evaluation phase, this is controlled via args.train.init_channels!
         genotype_to_evaluate (Genotype or str): Genotype that should be evaluated.
             A string is interpreted as path to a json file that contains the genotype that should be evaluated.
+        result_queue (torch.multiprocessing.Queue): Queue where the results of the evaluation phase should be stored to.
 
     Returns:
         str: Path to checkpoint that contains the best weights.
@@ -488,34 +532,56 @@ def evaluation_phase(args, base_dir, genotype_init_channels, genotype_to_evaluat
         float: Maximum memory reserved in MB.
         int: Number of model parameters.
     """
+    world_size = args.run.number_gpus
+    dist.init_process_group(
+        backend="nccl",
+        init_method="env://",
+        world_size=world_size,
+        rank=rank
+    )
     # Create folder structure
-    #base_dir = os.path.join(os.getcwd(), "evaluation_phase_seed_" + str(args.run.seed))
-    log_dir = os.path.join(base_dir, "logs")
-    tensorboard_dir = os.path.join(base_dir, "tensorboard")
-    checkpoint_dir = os.path.join(base_dir, "checkpoints", "checkpoint_init_channels_" + str(genotype_init_channels))
+    if rank == 0:
+        log_dir = os.path.join(base_dir, "logs")
+        tensorboard_dir = os.path.join(base_dir, "tensorboard")
+        checkpoint_dir = os.path.join(base_dir, "checkpoints", "checkpoint_init_channels_" + str(genotype_init_channels))
 
-    for directory in [log_dir, tensorboard_dir, checkpoint_dir]:
-        os.makedirs(directory, exist_ok=True)
+        for directory in [log_dir, tensorboard_dir, checkpoint_dir]:
+            os.makedirs(directory, exist_ok=True)
 
-    # Log file for the current evaluation phase
-    logfile = os.path.join(log_dir, "log_init_channels_" + str(genotype_init_channels) + ".txt")
-    train_utils.set_up_logging(logfile)
+        # Log file for the current evaluation phase
+        logfile = os.path.join(log_dir, "log_init_channels_" + str(genotype_init_channels) + ".txt")
+        train_utils.set_up_logging(logfile)
 
-    logging.info(f"Hyperparameters: \n{args.pretty()}")
+        logging.info(f"Hyperparameters: \n{args.pretty()}")
 
-    # Tensorboard SummaryWriter setup
-    tensorboard_writer_dir = os.path.join(tensorboard_dir, "init_channels_" + str(genotype_init_channels))
-    writer = SummaryWriter(tensorboard_writer_dir)
+        # Tensorboard SummaryWriter setup
+        tensorboard_writer_dir = os.path.join(tensorboard_dir, "init_channels_" + str(genotype_init_channels))
+        writer = SummaryWriter(tensorboard_writer_dir)
+    #    dist.barrier()
+    #else:
+    #    dist.barrier()
+
 
     #if not torch.cuda.is_available():
     #    logging.error("No GPU device available!")
     #    sys.exit(-1)
     #torch.cuda.set_device(args.run.gpu)
     #torch.backends.cudnn.benchmark=True
+    #if type(args.run.gpu) == int:
+    #    current_device = torch.cuda.current_device()
+    #    logging.info(f"Current cuda device: {current_device} - {torch.cuda.get_device_name(current_device)}")
+    #elif type(args.run.gpu) == list:
+    #    logging.info(f"Specified to use {len(args.run.gpu)} GPUs.")
+    #    logging.info(f"Got: {torch.cuda.device_count()} GPUs.")
+    #    for i in range(torch.cude.device_count()):
+    #        logging.info(f"    Cuda device {i}: {torch.cuda.get_device_name(torch.cuda.device(i))}")
 
-    current_device = torch.cuda.current_device()
-    logging.info(f"Current cuda device: {current_device} - {torch.cuda.get_device_name(current_device)}")
-
+    torch.cuda.set_device(rank)
+    if rank == 0:
+        current_device = torch.cuda.current_device()
+        logging.info(f"Current cuda device: {current_device} - {torch.cuda.get_device_name(current_device)}")
+    args.run.gpu = rank
+    torch.backends.cudnn.benchmark=True
     # reset peak memory stats
     torch.cuda.reset_peak_memory_stats()
 
@@ -523,48 +589,92 @@ def evaluation_phase(args, base_dir, genotype_init_channels, genotype_to_evaluat
     rng_seed = train_utils.RNGSeed(args.run.seed)
 
     criterion = nn.CrossEntropyLoss()
-    criterion = criterion.cuda()
+    criterion = criterion.cuda(rank)
 
     # Load datasets
-    num_classes, (train_queue, _), valid_queue, test_queue, (num_train, num_valid, num_test) = train_utils.create_cifar10_data_queues_own(
-        args, evaluation_mode=True
+    #num_classes, (train_queue, _), valid_queue, test_queue, (num_train, num_valid, num_test) = train_utils.create_cifar10_data_queues_own(
+    #    args, evaluation_mode=True
+    #)
+    # Manually create datasets so that we can manually split train and validation data and use them with DistributedSampler
+    train_dataset, valid_dataset, test_dataset = train_utils.get_cifar10_data_sets(args)
+    train_valid_split = int(np.floor(len(train_dataset) * args.train.train_portion))
+    train_dataset = torch.utils.data.Subset(train_dataset, np.arange(train_valid_split))
+    valid_dataset = torch.utils.data.Subset(valid_dataset, np.arange(train_valid_split, len(valid_dataset)))
+    num_classes = 10
+    num_train = len(train_dataset)
+    num_valid = len(valid_dataset)
+    num_test = len(test_dataset)
+    del test_dataset
+    train_sampler = torch.utils.data.distributed.DistributedSampler(
+        train_dataset,
+        num_replicas=world_size,
+        rank=rank,
+        shuffle=True
     )
+    train_queue = torch.utils.data.DataLoader(
+        dataset=train_dataset,
+        batch_size=args.train.batch_size,
+        sampler=train_sampler,
+        shuffle=False,
+        pin_memory=True,
+        num_workers=0
+    )
+    valid_sampler = torch.utils.data.distributed.DistributedSampler(
+        valid_dataset,
+        num_replicas=world_size,
+        rank=rank,
+        shuffle=True
+    )
+    valid_queue = torch.utils.data.DataLoader(
+        dataset=valid_dataset,
+        batch_size=args.train.batch_size,
+        sampler=valid_sampler,
+        shuffle=False,
+        pin_memory=True,
+        num_workers=0
+    )
+    if rank == 0:
+        #valid_sampler = torch.utils.data.RandomSampler(valid_dataset)
+        #valid_queue = torch.utils.data.DataLoader(
+        #    dataset=valid_dataset,
+        #    batch_size=args.train.batch_size,
+        #    sampler=valid_sampler,
+        #    pin_memory=True,
+        #    num_workers=0
+        #)
 
-    logging.info(f"Dataset: {args.run.dataset}")
-    logging.info(f"Number of classes: {num_classes}")
-    logging.info(f"Number of training images: {num_train}")
-    logging.info(f"Number of validation images: {num_valid}")
-    logging.info(f"Number of test images: {num_test}")
+        logging.info(f"Dataset: {args.run.dataset}")
+        logging.info(f"Number of classes: {num_classes}")
+        logging.info(f"Number of training images: {num_train}")
+        logging.info(f"Number of validation images: {num_valid}")
+        logging.info(f"Number of test images: {num_test}")
 
     # Load genotype
     if type(genotype_to_evaluate) == str:
-        try:
-            with open(genotype_to_evaluate) as genotype_file:
-                genotype_dict = json.load(genotype_file)
-            genotype_to_evaluate = train_utils.dict_to_genotype(genotype_dict)
-        except Exception as e:
-            logging.error(f"Error while trying to load genotype from the provided file: \n{e}")
-            return # TODO: how should errors be returned?
+        with open(genotype_to_evaluate, 'r') as genotype_file:
+            genotype_dict = json.load(genotype_file)
+        genotype_to_evaluate = train_utils.dict_to_genotype(genotype_dict)
 
     # Visualize genotype
-    genotype_graph_normal = visualize.plot(genotype_to_evaluate.normal, "", return_type="graph", output_format="png")
-    binary_normal = genotype_graph_normal.pipe()
-    stream_normal = io.BytesIO(binary_normal)
-    graph_normal = np.array(PIL.Image.open(stream_normal).convert("RGB"))
-    writer.add_image("Normal_Cell", graph_normal, dataformats="HWC")
-    genotype_graph_reduce = visualize.plot(genotype_to_evaluate.reduce, "", return_type="graph", output_format="png")
-    binary_reduce = genotype_graph_reduce.pipe()
-    stream_reduce = io.BytesIO(binary_reduce)
-    graph_reduce = np.array(PIL.Image.open(stream_reduce).convert("RGB"))
-    writer.add_image("Reduce_Cell", graph_reduce, dataformats="HWC")
-    del genotype_graph_normal
-    del binary_normal
-    del stream_normal
-    del graph_normal
-    del genotype_graph_reduce
-    del binary_reduce
-    del stream_reduce
-    del graph_reduce
+    if rank == 0:
+        genotype_graph_normal = visualize.plot(genotype_to_evaluate.normal, "", return_type="graph", output_format="png")
+        binary_normal = genotype_graph_normal.pipe()
+        stream_normal = io.BytesIO(binary_normal)
+        graph_normal = np.array(PIL.Image.open(stream_normal).convert("RGB"))
+        writer.add_image("Normal_Cell", graph_normal, dataformats="HWC")
+        genotype_graph_reduce = visualize.plot(genotype_to_evaluate.reduce, "", return_type="graph", output_format="png")
+        binary_reduce = genotype_graph_reduce.pipe()
+        stream_reduce = io.BytesIO(binary_reduce)
+        graph_reduce = np.array(PIL.Image.open(stream_reduce).convert("RGB"))
+        writer.add_image("Reduce_Cell", graph_reduce, dataformats="HWC")
+        del genotype_graph_normal
+        del binary_normal
+        del stream_normal
+        del graph_normal
+        del genotype_graph_reduce
+        del binary_reduce
+        del stream_reduce
+        del graph_reduce
 
     # Create model
     model = NetworkCIFAR(
@@ -574,18 +684,24 @@ def evaluation_phase(args, base_dir, genotype_init_channels, genotype_to_evaluat
         args.train.auxiliary,
         genotype_to_evaluate
     )
-    model = model.cuda()
+    model = model.cuda(rank)
+    model = nn.SyncBatchNorm.convert_sync_batchnorm(model)  # Converts BatchNorm layers to synced batchnorm layers
+    model = nn.parallel.DistributedDataParallel(
+        model,
+        device_ids=[rank]
+    )
 
-    logging.info(f"Size of model parameters: {train_utils.count_parameters_in_MB(model)} MB")
-    total_params = sum(x.data.nelement() for x in model.parameters())
-    logging.info(f"Total parameters of model: {total_params}")
+    if rank == 0:
+        logging.info(f"Size of model parameters: {train_utils.count_parameters_in_MB(model)} MB")
+        total_params = sum(x.data.nelement() for x in model.parameters())
+        logging.info(f"Total parameters of model: {total_params}")
 
-    optimizer, scheduler = train_utils.setup_optimizer(model, args)
+    optimizer, scheduler = train_utils.setup_optimizer(model, args, len(train_queue))
 
     # Check if we've already trained
     try:
         start_epochs, _, previous_runtime, best_observed = train_utils.load(
-            checkpoint_dir, rng_seed, model, optimizer, s3_bucket=None
+            checkpoint_dir, rng_seed, model, optimizer, s3_bucket=None, gpu=rank
         )
         if best_observed is None:
             best_observed = {
@@ -596,16 +712,18 @@ def evaluation_phase(args, base_dir, genotype_init_channels, genotype_to_evaluat
                 "genotype_dict": None,  # not used, but needs to be in the dict for compatibility with search phase
                 "runtime": 0.0          # runtime after which the best epoch was observed
             }
-        scheduler.last_epoch = start_epochs - 1
-        logging.info(
-            (
-                f"Resumed training from a previous checkpoint which was already trained for {start_epochs} epochs and "
-                f"already ran for {timedelta(seconds=previous_runtime)} hh:mm:ss."
+        scheduler.last_epoch = ((start_epochs - 1) * len(train_queue)) if args.train.scheduler == "cosine_mgpu" else (start_epochs - 1)
+        if rank == 0:
+            logging.info(
+                (
+                    f"Resumed training from a previous checkpoint which was already trained for {start_epochs} epochs and "
+                    f"already ran for {timedelta(seconds=previous_runtime)} hh:mm:ss."
+                )
             )
-        )
-        logging.info("This is included in the final runtime report.")
+            logging.info("This is included in the final runtime report.")
     except Exception as e:
-        logging.info(e)
+        if rank == 0:
+            logging.info(e)
         start_epochs = 0
         previous_runtime = 0
 
@@ -618,13 +736,17 @@ def evaluation_phase(args, base_dir, genotype_init_channels, genotype_to_evaluat
             "runtime": 0.0          # runtime after which the best epoch was observed
         }
 
-    logging.info(f"Evaluation phase started for genotype: \n{genotype_to_evaluate}")
-    logging.info(f"The genotype was searched with init_channels = {genotype_init_channels}")
-    train_start_time = timer()
+    if rank == 0:
+        logging.info(f"Evaluation phase started for genotype: \n{genotype_to_evaluate}")
+        logging.info(f"The genotype was searched with init_channels = {genotype_init_channels}")
+        train_start_time = timer()
 
     # Train loop
     for epoch in range(start_epochs, args.run.epochs):
-        logging.info(f"| Epoch: {epoch:4d}/{args.run.epochs} | lr: {scheduler.get_lr()[0]} |")
+        train_queue.sampler.set_epoch(epoch)
+        valid_queue.sampler.set_epoch(epoch)
+        if rank == 0:
+            logging.info(f"| Epoch: {epoch:4d}/{args.run.epochs} | lr: {scheduler.get_last_lr()[0]} |")
         model.drop_path_prob = args.train.drop_path_prob * epoch / args.run.epochs
 
         train_acc, train_obj, train_top5 = train_evaluation_phase(
@@ -632,9 +754,31 @@ def evaluation_phase(args, base_dir, genotype_init_channels, genotype_to_evaluat
             train_queue,
             model,
             criterion,
-            optimizer
+            optimizer,
+            scheduler,
+            rank
         )
-        logging.info(f"| train_acc: {train_acc} |")
+        train_acc_tensor = torch.tensor(train_acc).cuda(rank)
+        train_obj_tensor = torch.tensor(train_obj).cuda(rank)
+        train_top5_tensor = torch.tensor(train_top5).cuda(rank)
+        dist.reduce(train_acc_tensor, dst=0)
+        dist.reduce(train_obj_tensor, dst=0)
+        dist.reduce(train_top5_tensor, dst=0)
+
+        if rank == 0:
+            train_acc_mean = train_acc_tensor / world_size
+            train_obj_mean = train_obj_tensor / world_size
+            train_top5_mean = train_top5_tensor / world_size
+
+            logging.info(f"| train_acc: {train_acc_mean} |")
+            # Log values
+            writer.add_scalar("Loss/train", train_obj_mean.item(), epoch)
+            writer.add_scalar("Top1/train", train_acc_mean.item(), epoch)
+            writer.add_scalar("Top5/train", train_top5_mean.item(), epoch)
+            writer.add_scalar("lr", scheduler.get_last_lr()[0], epoch)
+        #    dist.barrier()
+        #else:
+        #    dist.barrier()
 
         valid_acc, valid_obj, valid_top5 = train_utils.infer(
             valid_queue,
@@ -642,31 +786,58 @@ def evaluation_phase(args, base_dir, genotype_init_channels, genotype_to_evaluat
             criterion,
             report_freq=args.run.report_freq
         )
-        logging.info(f"| valid_acc: {valid_acc} |")
+        valid_acc_tensor = torch.tensor(valid_acc).cuda(rank)
+        valid_obj_tensor = torch.tensor(valid_obj).cuda(rank)
+        valid_top5_tensor = torch.tensor(valid_top5).cuda(rank)
 
-        # Log values
-        writer.add_scalar("Loss/train", train_obj, epoch)
-        writer.add_scalar("Top1/train", train_acc, epoch)
-        writer.add_scalar("Top5/train", train_top5, epoch)
-        writer.add_scalar("lr", scheduler.get_lr()[0], epoch)
-        writer.add_scalar("Loss/valid", valid_obj, epoch)
-        writer.add_scalar("Top1/valid", valid_acc, epoch)
-        writer.add_scalar("Top5/valid", valid_top5, epoch)
+        dist.reduce(valid_acc_tensor, dst=0)
+        dist.reduce(valid_obj_tensor, dst=0)
+        dist.reduce(valid_top5_tensor, dst=0)
+        
         # memory stats
-        mem_peak_allocated_MB = torch.cuda.max_memory_allocated() / 1e6
-        mem_peak_reserved_MB = torch.cuda.max_memory_reserved() / 1e6
-        writer.add_scalar("Mem/peak_allocated_MB", mem_peak_allocated_MB, epoch)
-        writer.add_scalar("Mem/peak_reserved_MB", mem_peak_reserved_MB, epoch)
+        mem_peak_allocated_MB = torch.tensor(torch.cuda.max_memory_allocated() / 1e6).cuda(rank)
+        mem_peak_reserved_MB = torch.tensor(torch.cuda.max_memory_reserved() / 1e6).cuda(rank)
 
-        # Use validation accuracy to determine if we have obtained new best weights
-        if valid_acc > best_observed['valid']:
-            best_observed['train'] = train_acc
-            best_observed['valid'] = valid_acc
-            best_observed['epoch'] = epoch
-            best_observed['runtime'] = timer() - train_start_time + previous_runtime
+        dist.reduce(mem_peak_allocated_MB, dst=0)
+        dist.reduce(mem_peak_reserved_MB, dst=0)
 
-            # best_eval=True indicates that we want to separately save this checkpoint, so that at the end, we can load
-            # the weights with the best performance according to validation data
+        if rank == 0:
+            valid_acc_mean = valid_acc_tensor / world_size
+            valid_obj_mean = valid_obj_tensor / world_size
+            valid_top5_mean = valid_top5_tensor / world_size
+            mem_peak_allocated_MB_mean = mem_peak_allocated_MB / world_size
+            mem_peak_reserved_MB_mean = mem_peak_reserved_MB / world_size
+            logging.info(f"| valid_acc: {valid_acc_mean} |")
+            
+            writer.add_scalar("Loss/valid", valid_obj_mean.item(), epoch)
+            writer.add_scalar("Top1/valid", valid_acc_mean.item(), epoch)
+            writer.add_scalar("Top5/valid", valid_top5_mean.item(), epoch)
+
+            writer.add_scalar("Mem/peak_allocated_MB", mem_peak_allocated_MB_mean.item(), epoch)
+            writer.add_scalar("Mem/peak_reserved_MB", mem_peak_reserved_MB_mean.item(), epoch)
+
+            # Use validation accuracy to determine if we have obtained new best weights
+            if valid_acc_mean > best_observed['valid']:
+                best_observed['train'] = train_acc_mean.item()
+                best_observed['valid'] = valid_acc_mean.item()
+                best_observed['epoch'] = epoch
+                best_observed['runtime'] = timer() - train_start_time + previous_runtime
+
+                # best_eval=True indicates that we want to separately save this checkpoint, so that at the end, we can load
+                # the weights with the best performance according to validation data
+                train_utils.save(
+                    checkpoint_dir,
+                    epoch+1,
+                    rng_seed,
+                    model,
+                    optimizer,
+                    runtime=(timer() - train_start_time + previous_runtime),
+                    best_observed=best_observed,
+                    best_eval=True,
+                    multi_process=True
+                )
+
+            # Save checkpoint for current epoch
             train_utils.save(
                 checkpoint_dir,
                 epoch+1,
@@ -675,48 +846,53 @@ def evaluation_phase(args, base_dir, genotype_init_channels, genotype_to_evaluat
                 optimizer,
                 runtime=(timer() - train_start_time + previous_runtime),
                 best_observed=best_observed,
-                best_eval=True
+                multi_process=True
             )
+        #    dist.barrier()
+        #else:
+        #    dist.barrier()
+        if args.train.scheduler != "cosine_mgpu":
+            scheduler.step()
 
-        # Save checkpoint for current epoch
-        train_utils.save(
-            checkpoint_dir,
-            epoch+1,
-            rng_seed,
-            model,
-            optimizer,
-            runtime=(timer() - train_start_time + previous_runtime),
-            best_observed=best_observed
+    # memory stats for result dict
+    mem_peak_allocated_MB = torch.tensor(torch.cuda.max_memory_allocated() / 1e6).cuda(rank)
+    mem_peak_reserved_MB = torch.tensor(torch.cuda.max_memory_reserved() / 1e6).cuda(rank)
+
+    dist.reduce(mem_peak_allocated_MB, dst=0)
+    dist.reduce(mem_peak_reserved_MB, dst=0)
+
+    if rank == 0:
+        mem_peak_allocated_MB_mean = mem_peak_allocated_MB / world_size
+        mem_peak_reserved_MB_mean = mem_peak_reserved_MB / world_size
+        train_end_time = timer()
+        overall_runtime = train_end_time - train_start_time + previous_runtime
+        logging.info(f"\nTraining finished after {timedelta(seconds=overall_runtime)} hh:mm:ss.")
+
+        logging.info(
+            (
+                f"Best weights according to validation accuracy found in epoch {best_observed['epoch']} after "
+                f"{timedelta(seconds=best_observed['runtime'])} hh:mm:ss."
+            )
         )
+        logging.info(f"Train accuracy of best weights: {best_observed['train']} %")
+        logging.info(f"Validation accuracy of best weights: {best_observed['valid']} %")
+        logging.info(f"\nCheckpoint of best weights can be found in: {os.path.join(checkpoint_dir, 'model_best.ckpt')}")
+        result_dict = {
+            'checkpoint_path': os.path.join(checkpoint_dir, 'model_best.ckpt'),
+            'runtime_best_observed': best_observed['runtime'],
+            'train_acc_best_observed': best_observed['train'],
+            'valid_acc_best_observed': best_observed['valid'],
+            'overall_runtime': overall_runtime,
+            'max_mem_allocated_MB': mem_peak_allocated_MB_mean.item(),
+            'max_mem_reserved_MB': mem_peak_reserved_MB_mean.item(),
+            'total_params': total_params
+        }
+        result_queue.put(result_dict)
+        # before return, remove logging filehandler of current logfile, so that the following logs aren't written in the current log
+        logging.getLogger().removeHandler(logging.getLogger().handlers[-1])
 
-        scheduler.step()
-
-    train_end_time = timer()
-    overall_runtime = train_end_time - train_start_time + previous_runtime
-    logging.info(f"\nTraining finished after {timedelta(seconds=overall_runtime)} hh:mm:ss.")
-
-    logging.info(
-        (
-            f"Best weights according to validation accuracy found in epoch {best_observed['epoch']} after "
-            f"{timedelta(seconds=best_observed['runtime'])} hh:mm:ss."
-        )
-    )
-    logging.info(f"Train accuracy of best weights: {best_observed['train']} %")
-    logging.info(f"Validation accuracy of best weights: {best_observed['valid']} %")
-    logging.info(f"\nCheckpoint of best weights can be found in: {os.path.join(checkpoint_dir, 'model_best.ckpt')}")
-        
-    # before return, remove logging filehandler of current logfile, so that the following logs aren't written in the current log
-    logging.getLogger().removeHandler(logging.getLogger().handlers[-1])
-    return (
-        os.path.join(checkpoint_dir, 'model_best.ckpt'),
-        best_observed['runtime'],
-        best_observed['train'],
-        best_observed['valid'],
-        overall_runtime,
-        torch.cuda.max_memory_allocated() / 1e6,
-        torch.cuda.max_memory_reserved() / 1e6,
-        total_params
-    )
+    #dist.barrier()
+    dist.destroy_process_group()
     
 
 def search_phase(args, base_dir):
@@ -766,6 +942,10 @@ def search_phase(args, base_dir):
     #    sys.exit(-1)
     #torch.cuda.set_device(args.run.gpu)
     #torch.backends.cudnn.benchmark=True
+    if not torch.cuda.is_available():
+        raise Exception("No GPU device available")
+    torch.cuda.set_device(args.run.gpu)
+    torch.backends.cudnn.benchmark=True
 
     current_device = torch.cuda.current_device()
     logging.info(f"Current cuda device: {current_device} - {torch.cuda.get_device_name(current_device)}")
@@ -886,7 +1066,7 @@ def search_phase(args, base_dir):
             architect,
             args.run.s3_bucket
         )
-        scheduler.last_epoch = start_epochs - 1
+        scheduler.last_epoch = ((start_epochs -1) * len(train_queue)) if args.train.scheduler == "cosine_mgpu" else (start_epochs - 1)
         if best_observed is None:
             best_observed = {
                 "train": 0.0,           # for single-level search, used to keep track of best genotype
@@ -925,7 +1105,7 @@ def search_phase(args, base_dir):
 
     # Train loop
     for epoch in range(start_epochs, args.run.epochs):
-        lr = scheduler.get_lr()[0]
+        lr = scheduler.get_last_lr()[0]
         logging.info(f"| Epoch: {epoch:3d} / {args.run.epochs} | lr: {lr} |")
 
         model.drop_path_prob = args.train.drop_path_prob * epoch / args.run.epochs
@@ -958,7 +1138,7 @@ def search_phase(args, base_dir):
         # training returns top1, loss and top5
         train_acc, train_obj, train_top5 = train_search_phase(
             args, train_queue, train_2_queue if args.search.single_level else valid_queue,
-            model, architect, criterion, optimizer, lr,
+            model, architect, criterion, optimizer, scheduler, lr,
         )
         architect.baseline = train_obj
         architect.update_history()
@@ -1025,8 +1205,8 @@ def search_phase(args, base_dir):
         # memory stats
         mem_peak_allocated_MB = torch.cuda.max_memory_allocated() / 1e6
         mem_peak_reserved_MB = torch.cuda.max_memory_reserved() / 1e6
-        writer.add_scalar("Mem/peak_allocated_MB", mem_peak_allocated_MB, epoch)
-        writer.add_scalar("Mem/peak_reserved_MB", mem_peak_reserved_MB, epoch)
+        own_writer.add_scalar("Mem/peak_allocated_MB", mem_peak_allocated_MB, epoch)
+        own_writer.add_scalar("Mem/peak_reserved_MB", mem_peak_reserved_MB, epoch)
 
         if (args.search.single_level and train_acc > best_observed['train']) or (not args.search.single_level and valid_acc > best_observed['valid']):
                 best_observed['train'] = train_acc
@@ -1050,7 +1230,8 @@ def search_phase(args, base_dir):
             best_observed=best_observed
         )
 
-        scheduler.step()
+        if args.train.scheduler != "cosine_mgpu":
+            scheduler.step()
 
     train_end_time = timer()
     overall_runtime = train_end_time - train_start_time - overall_visualization_time + previous_runtime
@@ -1107,6 +1288,7 @@ def train_search_phase(
     architect,
     criterion,
     optimizer,
+    scheduler,
     lr,
     random_arch=False
 ):
@@ -1124,6 +1306,7 @@ def train_search_phase(
         architect (Architect): Architect that should be used to update architecture parameters.
         criterion (callable): Loss that should be utilized for weight updates.
         optimizer: The optimizer that should be utilized for weight updates.
+        scheduler: The learning rate scheduler. Needed in case of cosine_mgpu.
         lr (float): Current learning rate.
         random_arch (bool): Should a random architecture be returned.
             TODO: Might not work at the moment.
@@ -1183,6 +1366,8 @@ def train_search_phase(
         loss.backward()
         nn.utils.clip_grad_norm(model.parameters(), args.train.grad_clip)
         optimizer.step()
+        if args.train.scheduler == "cosine_mgpu":
+            scheduler.step()
 
         prec1, prec5 = train_utils.accuracy(logits, target, topk=(1, 5))
         objs.update(loss.item(), batch_size)
@@ -1200,7 +1385,9 @@ def train_evaluation_phase(
     train_queue,
     model,
     criterion,
-    optimizer
+    optimizer,
+    scheduler,
+    rank
 ):
     """Train routine for architecture evaluation phase.
 
@@ -1210,6 +1397,8 @@ def train_evaluation_phase(
         model (torch.nn.Module): The model that should be trained.
         criterion (callable): Loss that should be used for weight updates.
         optimizer: The optimizer that should be used for weight updates.
+        scheduler: The learning rate scheduler. Needed in case of cosine_mgpu.
+        rank (int): Rank of the current process
 
     Returns:
         float: Training accuracy.
@@ -1224,8 +1413,8 @@ def train_evaluation_phase(
     model.train()
 
     for step, (data, target) in enumerate(train_queue):
-        data = Variable(data, requires_grad=False).cuda()
-        target = Variable(target, requires_grad=False).cuda()
+        data = Variable(data, requires_grad=False).cuda(non_blocking=True)
+        target = Variable(target, requires_grad=False).cuda(non_blocking=True)
 
         optimizer.zero_grad()
         logits, logits_aux = model(data)
@@ -1238,6 +1427,8 @@ def train_evaluation_phase(
         loss.backward()         # calculates dloss / dx for every parameter x
         nn.utils.clip_grad_norm_(model.parameters(), args.train.grad_clip)
         optimizer.step()        # performs gradient update for every x
+        if args.train.scheduler == "cosine_mgpu":
+            scheduler.step()
 
         prec1, prec5 = train_utils.accuracy(logits, target, topk=(1, 5))
         batch_size = data.size(0)
@@ -1245,7 +1436,7 @@ def train_evaluation_phase(
         top1.update(prec1.item(), batch_size)
         top5.update(prec5.item(), batch_size)
 
-        if step % args.run.report_freq == 0:
+        if step % args.run.report_freq == 0 and rank == 0:
             logging.info(f"| Batch: {step:3d} | Loss: {objs.avg:5f} | Top1: {top1.avg:3f} | Top5: {top5.avg:3f} |")
 
     return top1.avg, objs.avg, top5.avg
