@@ -21,6 +21,14 @@ from torch.autograd import Variable
 from datetime import timedelta
 from timeit import default_timer as timer
 
+from botorch.models import SingleTaskGP
+from botorch.fit import fit_gpytorch_model
+from botorch.utils import standardize
+from gpytorch.mlls import ExactMarginalLogLikelihood
+from botorch.acquisition import UpperConfidenceBound
+from botorch.acquisition.analytic import ExpectedImprovement
+from botorch.optim import optimize_acqf
+
 import train_utils
 import visualize
 from genotypes_to_visualize import Genotype
@@ -142,10 +150,346 @@ def main(args):
         else:
             raise ValueError("Both search_history and eval_history are None. Critical error during grid_search. Consult logs for more info.")
     elif args.method.name == "gaussian_process":
-        raise NotImplementedError('Gaussian process is currently not implemented.')
+        (
+            reason,
+            incumbent,
+            runtime,
+            details
+        ) = gaussian_process(args)
+
+        logging.info(f"Gaussian Process search finished with the following reason: {reason}")
+        logging.info(f"After a search time of {timedelta(seconds=runtime)}, the GP came up with the following incumbent: {incumbent}")
+
     else:
         raise ValueError("Unrecognized method.")
 
+
+def gaussian_process(args):
+    """Searches for good performing learning rate candidates with a Gaussian Process
+
+    Args:
+        args (OmegaConf): Arguments
+
+    Returns:
+        Exception: The reason why the gaussian process was stopped.
+        dict: The incumbent.
+        float: Runtime of the GP in seconds.
+        dict: Details of the search process.
+    """
+    # setup logging
+    cwd = os.getcwd()
+    log = os.path.join(cwd, f"log_gaussian_process_seed_{args.run_search_phase.seed}.txt")
+    train_utils.set_up_logging(log)
+
+    logging.info(f"Hyperparameters: \n{args.pretty()}")
+
+    # base directories for search and evaluation phases
+    base_dir_search = os.path.join(cwd, f"search_phase_seed_{args.run_search_phase.seed}")
+    base_dir_eval = os.path.join(cwd, f"evaluation_phase_seed_{args.run_eval_phase.seed}")
+
+    logging.info(f"Starting Gaussian Process search for the best performing learning rate.")
+    current_runtime = 0
+    gp_start_time = timer()
+    torch.manual_seed(args.method.gp_seed)
+    gp_rng = torch.get_rng_state()
+
+    # 1. See if outer-loop checkpoint already exists
+    if os.path.isfile(os.path.join(cwd, 'outer_loop.ckpt')):
+        (
+            learning_rates, 
+            valid_errors, 
+            incumbent, 
+            previous_runtime, 
+            number_random_samples,
+            details,
+            gp_rng
+        ) = train_utils.load_gp_outer_loop_checkpoint(cwd)
+        torch.set_rng_state(gp_rng)
+        logging.info("Found an existing outer-loop checkpoint.")
+        logging.info(f"    The GP was already trained for {learning_rates.shape[0] - number_random_samples} iterations.")
+        logging.info(f"    Runtime of resumed GP: {timedelta(seconds=previous_runtime)} (h:m:s)")
+        current_runtime += previous_runtime
+    else:
+        # Sample <args.method.random_samples> values for search and evaluation learning rates at random or use provided values
+        logging.info("No outer-loop checkpoint found, starting search from scratch.")
+        incumbent = {'lrs': None, 'valid_error': None}
+        details = {'search': {}, 'evaluation': {}}
+        number_random_samples = args.method.random_samples
+        
+        # 2. Sample <args.method.random_samples> values for search and evaluation learning rates at random
+        if args.method.manual_random_samples is None:
+            # No values provided, sample at random
+            logging.info(f"No prior learning rates given. Sampling {number_random_samples} learning rate pairs at random.")
+            random_lrs_search = torch.FloatTensor(
+                number_random_samples, 
+                1
+            ).uniform_(
+                args.method.learning_rate_interval['search'][0] + args.method.interval_epsilon['search'][0],
+                args.method.learning_rate_interval['search'][1] - args.method.interval_epsilon['search'][1]
+            )
+            random_lrs_eval = torch.FloatTensor(
+                number_random_samples,
+                1
+            ).uniform_(
+                args.method.learning_rate_interval['evaluation'][0] + args.method.interval_epsilon['evaluation'][0], 
+                args.method.learning_rate_interval['evaluation'][1] - args.method.interval_epsilon['evaluation'][1]
+            )
+            learning_rates = torch.cat((random_lrs_search, random_lrs_eval), dim=1)
+            
+        else:
+            # Values manually provided, fill with random samples if not enough values given
+            learning_rates = torch.tensor(args.method.manual_random_samples)
+            logging.info(f"{learning_rates.shape[0]} learning rate pairs given as priors.")
+            if learning_rates.shape[0] < number_random_samples:
+                logging.info(f"Sampling {number_random_samples - learning_rates.shape[0]} pairs at random to reach the configured number of {number_random_samples} priors.")
+                random_lrs_search = torch.FloatTensor(
+                    number_random_samples - learning_rates.shape[0],
+                    1
+                ).uniform_(
+                    args.method.learning_rate_interval['search'][0] + args.method.interval_epsilon['search'][0],
+                    args.method.learning_rate_interval['search'][1] - args.method.interval_epsilon['search'][1]
+                )
+                random_lrs_eval = torch.FloatTensor(
+                    number_random_samples - learning_rates.shape[0],
+                    1
+                ).uniform_(
+                    args.method.learning_rate_interval['evaluation'][0] + args.method.interval_epsilon['evaluation'][0], 
+                    args.method.learning_rate_interval['evaluation'][1] - args.method.interval_epsilon['evaluation'][1]
+                )
+                random_lrs = torch.cat((random_lrs_search, random_lrs_eval), dim=1)
+                learning_rates = torch.cat((learning_rates, random_lrs), dim=0)
+
+        # obtain validation errors for learning rate priors
+        if args.method.manual_random_samples_results is None:
+            valid_errors = None
+        else:
+            valid_errors = torch.tensor(args.method.manual_random_samples_results)
+
+    try:
+        # Main loop
+        while True:
+            ##############################################################################################################
+            ## Loop Logic:                                                                                              ##
+            ##     1. Make sure that every learning rate pair has a corresponding validation error                      ##
+            ##              - if this is not the case, infer the validation error for all unmatched learning rate pairs ##
+            ##     2. Use all learning rate pairs and corresponding validation errors to train a GP                     ##
+            ##     3. Use this GP to predict the next candidate learning rate pair that should be tested                ##
+            ##              - add this pair to the list of all learning rates                                           ##
+            ##     4. Repeat from 1. (until budget exhausted)                                                           ##
+            ##     5. ???                                                                                               ##
+            ##     6. Profit                                                                                            ##
+            ##############################################################################################################
+
+            # Make sure that for every prior learning rate pair, the corresponding validation error is known
+            while valid_errors is None or valid_errors.shape[0] < learning_rates.shape[0]:
+                if valid_errors is None or (valid_errors.shape[0] - number_random_samples) < 0:
+                    iteration = -number_random_samples if valid_errors is None else (valid_errors.shape[0] - number_random_samples)
+                    logging.info(f"Starting interation {iteration}.")
+                # Perform search + evaluation
+                lr_index = 0 if valid_errors is None else valid_errors.shape[0]
+                lr_search = learning_rates[lr_index, 0].item()
+                lr_eval = learning_rates[lr_index, 1].item()
+                if iteration < 0:
+                    logging.info(f"Evaluating random samples, no GP candidate is used: \nSearch lr={lr_search}\nEval lr={lr_eval}")
+                else:
+                    logging.info(f"Evaluating candidate learning rates:\nSearch lr={lr_search}\nEval lr={lr_eval}")
+
+                # search phase
+                args.run = args.run_search_phase
+                args.train = args.train_search_phase
+                args.train.learning_rate = lr_search
+
+                # check if search with same learning rate was already performed
+                possible_genotype_file = os.path.join(base_dir_search, 'genotypes', f'genotype_learning_rate_{lr_search}.json')
+                if os.path.isfile(possible_genotype_file):
+                    # evaluation considers string to be a path to the genotype file and all other types to be the genotype itself
+                    best_genotype = possible_genotype_file
+                    try:
+                        search_results = details['search'][lr_search]
+                    except KeyError:
+                        logging.info(f"KeyError while trying to access the details of search performed with learning rate {lr_search}.")
+                        search_results = None
+                    logging.info("Search with the specified learning rate has already been performed. Skipping...")
+                elif lr_search in details['search'].keys() and details['search'][lr_search] is not None and not issubclass(details['search'][lr_search], Exception):
+                    search_results = details['search'][lr_search]
+                    best_genotype = search_results['best_genotype']
+                    logging.info("Search with the specified learning rate has already been performed. Skipping...")
+                else:
+                    logging.info("Performing search phase...")
+                    current_runtime += timer() - gp_start_time
+                    gp_rng = torch.get_rng_state()
+                    try:
+                        (
+                            best_genotype,
+                            best_genotype_search_time,
+                            search_train_acc,
+                            search_valid_acc,
+                            single_search_time,
+                            max_mem_allocated_MB,
+                            max_mem_reserved_MB
+                        ) = search_phase(args, base_dir_search, 'learning_rate')
+
+                        torch.set_rng_state(gp_rng)
+                        current_runtime += single_search_time
+                        gp_start_time = timer()
+
+                        search_results = {
+                            'best_genotype': best_genotype,
+                            'best_genotype_search_time': best_genotype_search_time,
+                            'train_acc': search_train_acc,
+                            'valid_acc': search_valid_acc,
+                            'runtime': single_search_time,
+                            'max_mem_allocated_MB': max_mem_allocated_MB,
+                            'max_mem_reserved_MB': max_mem_reserved_MB
+                        }
+
+                        details['search'][lr_search] = search_results
+
+                    except Exception as e:
+                        torch.set_rng_state(gp_rng)
+                        logging.info(f"Encountered the following exception during search: {e}")
+                        gp_start_time = timer()
+                        if lr_search in details['search'].keys() and issubclass(details['search'][lr_search], Exception):
+                            logging.info(f"Search for the given learning rate failed 2 times, removing this pair from the priors...")
+                            learning_rates = torch.cat((learning_rates[:lr_index], learning_rates[lr_index+1:]), dim=0)
+                        else:
+                            details['search'][lr_search] = e
+                        continue
+
+                    current_runtime += timer() - gp_start_time
+                    gp_start_time = timer()
+                    train_utils.save_gp_outer_loop_checkpoint(
+                        cwd,
+                        learning_rates,
+                        valid_errors,
+                        incumbent,
+                        current_runtime,
+                        number_random_samples,
+                        details,
+                        torch.get_rng_state()
+                    )
+                    logging.info(f"Search phase finished after {timedelta(seconds=details['search'][lr_search]['runtime'])}")
+
+                # evaluation phase
+                logging.info(f"Performing evaluation of found genotype: {best_genotype}")
+                args.run = args.run_eval_phase
+                args.train = args.train_eval_phase
+                args.train.learning_rate = lr_eval
+
+                smp = mp.get_context('spawn')
+                result_queue = smp.Queue()
+                current_runtime += timer() - gp_start_time
+                gp_rng = torch.get_rng_state()
+                try:
+                    os.environ['MASTER_ADDR'] = 'localhost'
+                    os.environ['MASTER_PORT'] = train_utils.find_free_port()
+                    mp.spawn(
+                        evaluation_phase,
+                        args=(
+                            args,
+                            base_dir_eval,
+                            'learning_rate',
+                            best_genotype,
+                            result_queue,
+                            lr_search
+                        ),
+                        nprocs=args.run.number_gpu
+                    )
+                    logging.info("Evaluation phase completed successfully")
+                    torch.set_rng_state(gp_rng)
+                    result = result_queue.get()
+                    current_runtime += result['overall_runtime']
+                    gp_start_time = timer()
+                    val_err = torch.tensor([[result['valid_acc_best_observed']]])
+                    details['evaluation'][f"{lr_search}_{lr_eval}"] = result
+                    del result
+                    logging.info(f"Evaluation phase finished after {timedelta(seconds=details['evaluation'][f'{lr_search}_{lr_eval}']['overall_runtime'])}")
+                    logging.info(f"Validation error: {val_err[0].item()}")
+
+                except Exception as e:
+                    torch.set_rng_state(gp_rng)
+                    logging.info(f"Encountered the following exception during evaluation: {e}")
+                    gp_start_time = timer()
+                    if f"{lr_search}_{lr_eval}" in details['evaluation'].keys() and issubclass(details['evaluation'][f'{lr_search}_{lr_eval}'], Exception):
+                        logging.info(f"Evaluation phase for the given learning rate failed 2 times, removing this pair from the priors...")
+                        learning_rates = torch.cat((learning_rates[:lr_index], learning_rates[lr_index+1:]), dim=0)
+                    else:
+                        details['evaluation'][f"{lr_search}_{lr_eval}"] = e
+                    continue
+                    
+                valid_errors = torch.cat((valid_errors, val_err), dim=0)
+
+                # update incumbent
+                incumbent = train_utils.determine_incumbent(learning_rates, valid_errors)
+                logging.info(f"Current incumbent: {incumbent}")
+                
+                current_runtime += timer() - gp_start_time
+                gp_start_time = timer()
+                train_utils.save_gp_outer_loop_checkpoint(
+                    cwd,
+                    learning_rates,
+                    valid_errors,
+                    incumbent,
+                    current_runtime,
+                    number_random_samples,
+                    details,
+                    torch.get_rng_state()
+                )      
+        
+            # same number of learning rate pairs and corresponding validation errors --> Perform GP
+                
+            iteration = valid_errors.shape[0] - number_random_samples
+            logging.info(f"Starting interation {iteration}.")
+
+            # Create GP
+            gp = SingleTaskGP(learning_rates, valid_errors)
+            mll = ExactMarginalLogLikelihood(gp.likelihood, gp)
+            fit_gpytorch_model(mll)
+
+            # Acquisition function
+            EI = ExpectedImprovement(gp, best_f=incumbent['valid_error'], maximize=False)
+            bounds = torch.tensor(
+                [
+                    [
+                        args.method.learning_rate_interval['search'][0] + args.method.interval_epsilon['search'][0],
+                        args.method.learning_rate_interval['evaluation'][0] + args.method.interval_epsilon['evaluation'][0]
+                    ],
+                    [
+                        args.method.learning_rate_interval['search'][1] - args.method.interval_epsilon['search'][1],
+                        args.method.learning_rate_interval['evaluation'][1] - args.method.interval_epsilon['evaluation'][1]
+                    ]
+                ]
+            )
+
+            # Optimize acquisition function
+            candidate, acq_value = optimize_acqf(
+                EI,
+                bounds=bounds,
+                q=1,
+                num_restarts=5,
+                raw_samples=20
+            )
+
+            logging.info(f"Learning rate candidate is {candidate}")
+
+            # add candidate to learning_rates so that it gets evaluated in the next iteration
+            learning_rates = torch.cat((learning_rates, candidate), dim=0)
+
+            current_runtime += timer() - gp_start_time
+            gp_start_time = timer()
+            train_utils.save_gp_outer_loop_checkpoint(
+                cwd,
+                learning_rates,
+                valid_errors,
+                incumbent,
+                current_runtime,
+                number_random_samples,
+                details,
+                torch.get_rng_state()
+            )
+
+    except Exception as e:
+        return e, incumbent, current_runtime, details
 
 
 def grid_search(args):
@@ -510,7 +854,7 @@ def grid_search(args):
         return search_history, eval_history, overall_runtime_search_phase, overall_runtime_eval_phase
 
 
-def evaluation_phase(rank, args, base_dir, run_id, genotype_to_evaluate, result_queue, genotype_init_channels=None):
+def evaluation_phase(rank, args, base_dir, run_id, genotype_to_evaluate, result_queue, search_phase_id=None):
     """Fully trains a provided genotype
     Code is mostly copied from train_final.py but modified to work for my experiments.
     Best weights are selected according to validation accuracy.
@@ -523,11 +867,11 @@ def evaluation_phase(rank, args, base_dir, run_id, genotype_to_evaluate, result_
         genotype_to_evaluate (Genotype or str): Genotype that should be evaluated.
             A string is interpreted as path to a json file that contains the genotype that should be evaluated.
         result_queue (torch.multiprocessing.Queue): Queue where the results of the evaluation phase should be stored to.
-        genotype_init_channels (int): Initial number of channels the genotype was searched with.
-            If specified along with run_id == 'init_channels', will get used as ID for different evaluation runs.
-            You can leave this at None if run_id != 'init_channels'.
-            This does NOT influence init_channels for evaluation phase, this is controlled via args.train.init_channels!
-
+        search_phase_id (any): Since evaluation with the same hyperparameter can be carried out for different search phases
+            with different results, this ID is used to differentiate between evaluation phases for different search phases.
+                For experiment 1 (grid search over initial channels), provide the init_channels used during search.
+                For experiment 2 (learning rates), provide the search phase learning rate.
+            If no value is provided, this parameter is ignored and multiple evaluation runs with the same hyperparmameter will overwrite each other.
     Returns:
         str: Path to checkpoint that contains the best weights.
         float: Runtime in seconds after which the best weights where found.
@@ -548,7 +892,13 @@ def evaluation_phase(rank, args, base_dir, run_id, genotype_to_evaluate, result_
     # Create folder structure
     if rank == 0:
         try:
-            run_identifier = f"{run_id}_{str(genotype_init_channels) if (run_id == 'init_channels' and genotype_init_channels) else str(args.train[run_id])}"
+            if run_id == 'init_channels' and search_phase_id:
+                run_identifier = f"{run_id}_{str(search_phase_id)}" 
+            elif run_id == 'learning_rate' and search_phase_id:
+                run_identifier = f"{run_id}_search-{search_phase_id}_eval-{args.train[run_id]}"
+            else:
+                run_identifier = f"{run_id}_{args.train[run_id]}"
+
         except KeyError:
             run_identifier = f"invalid_run_id_{run_id}"
         log_dir = os.path.join(base_dir, "logs")
@@ -748,8 +1098,8 @@ def evaluation_phase(rank, args, base_dir, run_id, genotype_to_evaluate, result_
 
     if rank == 0:
         logging.info(f"Evaluation phase started for genotype: \n{genotype_to_evaluate}")
-        if genotype_init_channels:
-            logging.info(f"The genotype was searched with init_channels = {genotype_init_channels}")
+        if search_phase_id:
+            logging.info(f"The genotype was searched with {run_id} = {search_phase_id}")
         train_start_time = timer()
 
     # Train loop

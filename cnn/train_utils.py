@@ -236,9 +236,10 @@ def setup_optimizer(model, args, train_queue_size=None):
                 optimizer, 2, lr_anneal_cycles, min_lr, args.run.scheduler_epochs
             )
         elif args.train.scheduler == "cosine_mgpu":
+            # The gaussian process should operate on the max learning rate directly, while for grid search, we manually increase the learning rate by the number of GPUs
             scheduler = torch.optim.lr_scheduler.OneCycleLR(
                 optimizer,
-                args.train.learning_rate * (args.run.number_gpus or 1),   # args.run.number_gpus returns None if it does not exist
+                args.train.learning_rate if args.method.name == "gaussian_process" else (args.train.learning_rate * (args.run.number_gpus or 1)),  # args.run.number_gpus returns None if it does not exist
                 epochs=args.run.scheduler_epochs,
                 steps_per_epoch=train_queue_size,
                 pct_start=(args.train.lr_warm_up_percentage or 0.1),
@@ -875,7 +876,7 @@ def save_outer_loop_checkpoint(folder, history: dict, overall_runtime: float):
 
 
 def load_outer_loop_checkpoint(folder):
-    """Loads the outer loop history checkpoint from the provided folder.
+    """Loads the outer loop history checkpoint of the grid search from the provided folder.
 
     Args:
         folder (str): Path to the folder that contains the search history checkpoint.
@@ -889,6 +890,80 @@ def load_outer_loop_checkpoint(folder):
 
     return checkpoint['history'], checkpoint['runtime']
 
-    
 
+def load_gp_outer_loop_checkpoint(folder):
+    """Loads the outer loop checkpoint of the Gaussian Process from the provided folder
+    
+    Args:
+        folder(str): Path to the folder that contains the checkpoint
+
+    Returns:
+        torch.tensor: Tensor containing the learning rate priors of the GP.
+        torch.tensor: Tensor containing the corresponding validation errors for the learning rates.
+        dict: Dictionary containing the currently best observed learning rates (['lrs']) and corresponding validation error (['valid_error']) (the incumbent).
+        float: Overall runtime of the GP in seconds.
+        int: Number of randomly sampled priors at the beginning of the search.
+        dict: Details of each search and evaluation run.
+        torch.ByteTensor: The random state of the GP.
+    """
+    ckpt = os.path.join(folder, 'outer_loop.ckpt')
+    checkpoint = torch.load(ckpt)
+    torch.set_rng_state(checkpoint['rng_state'])
+
+    return (
+        checkpoint['learrning_rates'], 
+        checkpoint['valid_errors'], 
+        checkpoint['incumbent'], 
+        checkpoint['runtime'], 
+        checkpoint['number_randomly_sampled'], 
+        checkpoint['details'],
+        checkpoint['rng_state']
+    )
+
+    
+def save_gp_outer_loop_checkpoint(folder, learning_rates, valid_errors, incumbent, runtime, number_randomly_sampled, details, random_state):
+    """Saves the outer loop checkpoint of the Gaussian Process.
+
+    Args:
+        folder (str): Directory where the checkpoint should be saved to.
+        learning_rates (torch.tensor): Tensor containing the learning rate priors for the GP.
+        valid_errors (torch.tensor): Tensor containing the validation errors associated with the learning rates.
+        incumbent (dict): The currently best observed pair of learning rates with their associated validation error.
+        runtime (float): Current runtime of the GP in seconds.
+        number_randomly_sampled (int): Number of random priors the GP starts with.
+        details (dict): Dictionary containing the details of every search and evaluation phase.
+        random_state (torch.ByteTensor): The random state of the GP.
+    """
+    checkpoint = {
+        'learning_rates': learning_rates,
+        'valid_errors': valid_errors,
+        'incumbent': incumbent,
+        'runtime': runtime,
+        'number_randomly_sampled': number_randomly_sampled,
+        'details': details,
+        'rng_state': random_state
+    }
+    ckpt = os.path.join(folder, 'outer_loop.ckpt')
+    ckpt_part = ckpt + ".part"
+    torch.save(checkpoint, ckpt_part)
+    os.replace(ckpt_part, ckpt)
+
+
+def determine_incumbent(learning_rates, valid_errors):
+    """Determines and returns the best validation error and the corresponding learning rates.
+
+    Args:
+        learning_rates (torch.Tensor): All prior learning rates.
+        valid_errors (torch.Tensor): The corresponding validation errors.
+
+    Returns:
+        dict: The incumbent.
+    """
+    pos_best = torch.argmin(valid_errors)
+
+    incumbent = {
+        'lrs': learning_rates[pos_best],
+        'valid_error': valid_errors[pos_best]
+    }
+    return incumbent
     

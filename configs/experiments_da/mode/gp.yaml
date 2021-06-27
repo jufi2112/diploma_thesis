@@ -1,8 +1,37 @@
 ﻿method:
     name: "gaussian_process" # used as directory name --> no invalid characters
     mode: "sequential" # search_only, evaluate_only, sequential
-    use_search_channels_for_evaluation: true    # use the same number of init_channels for search and evaluation
+
+    # interval from where the learning rates should be sampled (both boundaries included)
+    # if you want to exclude a boundary, provide an epsilon in interval_epsilon
+    learning_rate_interval: {'search': [0, 1], 'evaluation': [0, 1]}
+
+    # By default, torch uniform samples the both interval boundaries inclusively. If you don't want this, you can provide an epsilon which is added / subtracted from the boundary
+    interval_epsilon: {'search': [1e-6, 1e-6], 'evaluation': [1e-6, 1e-6]}
+
+    random_samples: 4
+
+    # if you want to manually provide starting points for the GP, add them like follows:
+    # [[lr_search_1, lr_eval_1], [lr_search_2, lr_eval_2], ...]
+    # if you already have corresponding validation values, provide them in manual_random_samples_results
+    manual_random_samples: null
+
+    # results of the manual samples provided above. If you have no results, keep null
+    manual_random_samples_results: null
+
+    gp_seed: 0
 
 hydra:
     run:
         dir: D:\\Users\\Julien\\Documents\\Diplom_Results\\experiments_da\\${method.name}
+
+run_eval_phase:
+    # due to time constraints, only perform evaluation on 300 instead of 600 epochs
+    epochs: 300
+    scheduler_epochs: 300
+
+train_search_phase:
+    init_channels: 8
+
+train_eval_phase:
+    init_channels: 36
