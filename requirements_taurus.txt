@@ -12,4 +12,5 @@ pillow
 matplotlib
 graphviz
 botorch
+gpytorch==1.4.2
 git+https://github.com/gbaydin/hypergradient-descent.git
