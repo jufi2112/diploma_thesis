@@ -1,11 +1,11 @@
 #!/bin/bash
 #SBATCH --partition=ml
-#SBATCH --time=48:00:00
+#SBATCH --time=80:00:00
 #SBATCH --nodes=1
 #SBATCH --gres=gpu:1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=1
-#SBATCH --mem-per-cpu=5772M
+#SBATCH --mem-per-cpu=10000M
 #SBATCH -J "grid_search_sequential_seed_1431"
 #SBATCH --mail-user=julien.fischer@mailbox.tu-dresden.de
 #SBATCH --mail-type=BEGIN,END,FAIL

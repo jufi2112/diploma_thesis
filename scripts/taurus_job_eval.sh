@@ -2,14 +2,14 @@
 #SBATCH --partition=ml
 #SBATCH --time=120:00:00
 #SBATCH --nodes=1
-#SBATCH --gres=gpu:8
-#SBATCH --ntasks-per-node=8
+#SBATCH --gres=gpu:6
+#SBATCH --ntasks-per-node=6
 #SBATCH --cpus-per-task=1
-#SBATCH --mem-per-cpu=10000M
+#SBATCH --mem-per-cpu=4000M
 
 #SBATCH -J "exp_1_v100_grid_search_evaluate_only_seed_2554"
 
-#SBATCH -A p_windturbine
+#SBATCH -A p_da_studenten
 #SBATCH --mail-user=julien.fischer@mailbox.tu-dresden.de
 #SBATCH --mail-type=BEGIN,END,FAIL
 #SBATCH -o /scratch/ws/1/s8732099-da/slurm_output/exp_1/v100_grid_search_evaluate_only_seed_2554_normal.out
@@ -24,6 +24,7 @@ export PYTHONPATH=$PYTHONPATH:/scratch/ws/1/s8732099-da/git/gaea_release/AutoDL-
 python /scratch/ws/1/s8732099-da/git/gaea_release/cnn/experiments_da.py \
     mode=grid_search \
     method.mode=evaluate_only \
+    method.use_search_channels_for_evaluation=false \
     run_search_phase.seed=2554 \
     run_eval_phase.seed=2554 \
     run_search_phase.data=/scratch/ws/1/s8732099-da/data \
@@ -32,9 +33,9 @@ python /scratch/ws/1/s8732099-da/git/gaea_release/cnn/experiments_da.py \
     run_eval_phase.autodl=/scratch/ws/1/s8732099-da/git/gaea_release/AutoDL-Projects \
     run_search_phase.n_threads_data=0 \
     run_eval_phase.n_threads_data=0 \
-    run_eval_phase.number_gpus=8 \
-    train_search_phase.batch_size=32 \
-    train_eval_phase.batch_size=32 \
-    hydra.run.dir=/scratch/ws/1/s8732099-da/experiments_da/exp_1_mgpu/v100/\${method.name}-batch_size_256
+    run_eval_phase.number_gpus=6 \
+    train_search_phase.batch_size=128 \
+    train_eval_phase.batch_size=128 \
+    hydra.run.dir=/scratch/ws/1/s8732099-da/experiments_da/exp_1_constant_eval_channels/v100/\${method.name}-batch_size_256
 
 exit 0

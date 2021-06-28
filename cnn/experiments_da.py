@@ -424,6 +424,7 @@ def gaussian_process(args):
                 logging.info(f"Current incumbent: {incumbent}")
                 
                 current_runtime += timer() - gp_start_time
+                logging.info(f"Current runtime of the GP search: {timedelta(seconds=current_runtime)}")
                 gp_start_time = timer()
                 train_utils.save_gp_outer_loop_checkpoint(
                     cwd,
@@ -439,7 +440,7 @@ def gaussian_process(args):
             # same number of learning rate pairs and corresponding validation errors --> Perform GP
                 
             iteration = valid_errors.shape[0] - number_random_samples
-            logging.info(f"Starting interation {iteration}.")
+            logging.info(f"Starting iteration {iteration}.")
 
             # Create GP
             gp = SingleTaskGP(learning_rates, valid_errors)

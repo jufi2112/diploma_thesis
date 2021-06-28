@@ -31,7 +31,7 @@ run_eval_phase:
     scheduler_epochs: 300
 
 train_search_phase:
-    init_channels: 8
+    init_channels: 40
 
 train_eval_phase:
     init_channels: 36
