@@ -265,6 +265,19 @@ def gaussian_process(args):
         else:
             valid_errors = torch.tensor(args.method.manual_random_samples_results)
 
+        current_runtime += timer() - gp_start_time
+        gp_start_time = timer()
+        train_utils.save_gp_outer_loop_checkpoint(
+            cwd,
+            learning_rates,
+            valid_errors,
+            incumbent,
+            current_runtime,
+            number_random_samples,
+            details,
+            torch.get_rng_state()
+        )
+
     try:
         # Main loop
         while True:
