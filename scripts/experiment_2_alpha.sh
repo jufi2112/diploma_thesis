@@ -12,8 +12,8 @@
 #SBATCH -A p_da_studenten
 #SBATCH --mail-user=julien.fischer@mailbox.tu-dresden.de
 #SBATCH --mail-type=BEGIN,END,FAIL
-#SBATCH -o /beegfs/global0/ws/s8732099-diploma_thesis/slurm_output/exp_1/a100_gp_seed_63_normal.out
-#SBATCH -e /beegfs/global0/ws/s8732099-diploma_thesis/slurm_output/exp_1/a100_gp_seed_63_error.out
+#SBATCH -o /beegfs/global0/ws/s8732099-diploma_thesis/slurm_output/exp_2/a100_gp_seed_63_normal.out
+#SBATCH -e /beegfs/global0/ws/s8732099-diploma_thesis/slurm_output/exp_2/a100_gp_seed_63_error.out
 
 module load modenv/hiera  GCCcore/8.3.0  Python/3.7.4
 source /home/s8732099/.venv/gaea_extended_alpha/bin/activate

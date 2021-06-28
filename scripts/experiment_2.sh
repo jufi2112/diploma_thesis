@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH --partition=ml
-#SBATCH --time=340:00:00
+#SBATCH --time=100:00:00
 #SBATCH --nodes=1
 #SBATCH --gres=gpu:6
 #SBATCH --ntasks-per-node=6
@@ -12,8 +12,8 @@
 #SBATCH -A p_da_studenten
 #SBATCH --mail-user=julien.fischer@mailbox.tu-dresden.de
 #SBATCH --mail-type=BEGIN,END,FAIL
-#SBATCH -o /beegfs/global0/ws/s8732099-diploma_thesis/slurm_output/exp_1/v100_gp_seed_1_normal.out
-#SBATCH -e /beegfs/global0/ws/s8732099-diploma_thesis/slurm_output/exp_1/v100_gp_seed_1_error.out
+#SBATCH -o /beegfs/global0/ws/s8732099-diploma_thesis/slurm_output/exp_2/v100_gp_seed_1_normal.out
+#SBATCH -e /beegfs/global0/ws/s8732099-diploma_thesis/slurm_output/exp_2/v100_gp_seed_1_error.out
 
 module load modenv/ml
 module load Python/3.7.4-GCCcore-8.3.0
@@ -24,6 +24,7 @@ python /beegfs/global0/ws/s8732099-diploma_thesis/git/diploma_thesis/cnn/experim
     mode=gp \
     run_search_phase.seed=21 \
     run_eval_phase.seed=12 \
+    method.gp_seed=1 \
     run_search_phase.data=/beegfs/global0/ws/s8732099-diploma_thesis/data \
     run_eval_phase.data=/beegfs/global0/ws/s8732099-diploma_thesis/data \
     run_search_phase.autodl=/beegfs/global0/ws/s8732099-diploma_thesis/git/diploma_thesis/AutoDL-Projects \
