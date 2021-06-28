@@ -911,7 +911,7 @@ def load_gp_outer_loop_checkpoint(folder):
     torch.set_rng_state(checkpoint['rng_state'])
 
     return (
-        checkpoint['learrning_rates'], 
+        checkpoint['learning_rates'], 
         checkpoint['valid_errors'], 
         checkpoint['incumbent'], 
         checkpoint['runtime'], 
