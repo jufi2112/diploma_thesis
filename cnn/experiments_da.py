@@ -393,42 +393,42 @@ def gaussian_process(args):
                 result_queue = smp.Queue()
                 current_runtime += timer() - gp_start_time
                 gp_rng = torch.get_rng_state()
-                try:
-                    os.environ['MASTER_ADDR'] = 'localhost'
-                    os.environ['MASTER_PORT'] = train_utils.find_free_port()
-                    mp.spawn(
-                        evaluation_phase,
-                        args=(
-                            args,
-                            base_dir_eval,
-                            'learning_rate',
-                            best_genotype,
-                            result_queue,
-                            lr_search
-                        ),
-                        nprocs=args.run.number_gpu
-                    )
-                    logging.info("Evaluation phase completed successfully")
-                    torch.set_rng_state(gp_rng)
-                    result = result_queue.get()
-                    current_runtime += result['overall_runtime']
-                    gp_start_time = timer()
-                    val_err = torch.tensor([[result['valid_acc_best_observed']]])
-                    details['evaluation'][f"{lr_search}_{lr_eval}"] = result
-                    del result
-                    logging.info(f"Evaluation phase finished after {timedelta(seconds=details['evaluation'][f'{lr_search}_{lr_eval}']['overall_runtime'])}")
-                    logging.info(f"Validation error: {val_err[0].item()}")
+                #try:
+                os.environ['MASTER_ADDR'] = 'localhost'
+                os.environ['MASTER_PORT'] = train_utils.find_free_port()
+                mp.spawn(
+                    evaluation_phase,
+                    args=(
+                        args,
+                        base_dir_eval,
+                        'learning_rate',
+                        best_genotype,
+                        result_queue,
+                        lr_search
+                    ),
+                    nprocs=args.run.number_gpu
+                )
+                logging.info("Evaluation phase completed successfully")
+                torch.set_rng_state(gp_rng)
+                result = result_queue.get()
+                current_runtime += result['overall_runtime']
+                gp_start_time = timer()
+                val_err = torch.tensor([[result['valid_acc_best_observed']]])
+                details['evaluation'][f"{lr_search}_{lr_eval}"] = result
+                del result
+                logging.info(f"Evaluation phase finished after {timedelta(seconds=details['evaluation'][f'{lr_search}_{lr_eval}']['overall_runtime'])}")
+                logging.info(f"Validation error: {val_err[0].item()}")
 
-                except Exception as e:
-                    torch.set_rng_state(gp_rng)
-                    logging.info(f"Encountered the following exception during evaluation: {e}")
-                    gp_start_time = timer()
-                    if f"{lr_search}_{lr_eval}" in details['evaluation'].keys() and issubclass(details['evaluation'][f'{lr_search}_{lr_eval}'], Exception):
-                        logging.info(f"Evaluation phase for the given learning rate failed 2 times, removing this pair from the priors...")
-                        learning_rates = torch.cat((learning_rates[:lr_index], learning_rates[lr_index+1:]), dim=0)
-                    else:
-                        details['evaluation'][f"{lr_search}_{lr_eval}"] = e
-                    continue
+                # except Exception as e:
+                #     torch.set_rng_state(gp_rng)
+                #     logging.info(f"Encountered the following exception during evaluation: {e}")
+                #     gp_start_time = timer()
+                #     if f"{lr_search}_{lr_eval}" in details['evaluation'].keys() and issubclass(details['evaluation'][f'{lr_search}_{lr_eval}'], Exception):
+                #         logging.info(f"Evaluation phase for the given learning rate failed 2 times, removing this pair from the priors...")
+                #         learning_rates = torch.cat((learning_rates[:lr_index], learning_rates[lr_index+1:]), dim=0)
+                #     else:
+                #         details['evaluation'][f"{lr_search}_{lr_eval}"] = e
+                #     continue
                     
                 valid_errors = torch.cat((valid_errors, val_err), dim=0)
 
