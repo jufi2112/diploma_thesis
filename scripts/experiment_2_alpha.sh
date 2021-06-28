@@ -33,6 +33,6 @@ python /beegfs/global0/ws/s8732099-diploma_thesis/git/diploma_thesis/cnn/experim
     run_eval_phase.number_gpus=6 \
     train_search_phase.batch_size=256 \
     train_eval_phase.batch_size=128 \
-    hydra.run.dir=/beegfs/global0/ws/s8732099-diploma_thesis/experiments_da/exp_2/v100/\${method.name}-seed_\${method.gp_seed}
+    hydra.run.dir=/beegfs/global0/ws/s8732099-diploma_thesis/experiments_da/exp_2/a100/\${method.name}-seed_\${method.gp_seed}
 
 exit 0
