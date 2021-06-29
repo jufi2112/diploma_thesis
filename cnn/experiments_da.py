@@ -1266,7 +1266,8 @@ def evaluation_phase(rank, args, base_dir, run_id, genotype_to_evaluate, result_
         # before return, remove logging filehandler of current logfile, so that the following logs aren't written in the current log
         logging.getLogger().removeHandler(logging.getLogger().handlers[-1])
 
-    #dist.barrier()
+    logging.info(f"Rank {rank} waiting on barrier before destroy_process_group()")
+    dist.barrier()
     dist.destroy_process_group()
     
 
