@@ -1230,11 +1230,24 @@ def evaluation_phase(rank, args, base_dir, run_id, genotype_to_evaluate, result_
             scheduler.step()
 
     # memory stats for result dict
+    if rank == 0:
+        logging.info("Calculating peak allocated and reserved memory")
     mem_peak_allocated_MB = torch.tensor(torch.cuda.max_memory_allocated() / 1e6).cuda(rank)
     mem_peak_reserved_MB = torch.tensor(torch.cuda.max_memory_reserved() / 1e6).cuda(rank)
+    if rank == 0:
+        logging.info(f"Peak allocated memory: {mem_peak_allocated_MB}")
+        logging.info(f"Peak reserved memory: {mem_peak_reserved_MB}")
 
+    logging.info(f"Rank {rank} peak allocated: {mem_peak_allocated_MB}")
+    logging.info(f"Rank {rank} peak reserved: {mem_peak_reserved_MB}")
+
+    if rank == 0:
+        logging.info(f"Reducing memory tensors")
     dist.reduce(mem_peak_allocated_MB, dst=0)
     dist.reduce(mem_peak_reserved_MB, dst=0)
+    if rank == 0:
+        logging.info(f"Reduced rank {rank} allocated mem tensor: {mem_peak_allocated_MB}")
+        logging.info(f"Reduced rank {rank} reserved mem tensor: {mem_peak_reserved_MB}")
 
     if rank == 0:
         mem_peak_allocated_MB_mean = mem_peak_allocated_MB / world_size
