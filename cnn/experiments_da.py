@@ -1241,7 +1241,7 @@ def evaluation_phase(rank, args, base_dir, run_id, genotype_to_evaluate, result_
         mem_peak_reserved_MB_mean = mem_peak_reserved_MB / world_size
         train_end_time = timer()
         overall_runtime = train_end_time - train_start_time + previous_runtime
-        logging.info(f"\nTraining finished after {timedelta(seconds=overall_runtime)} hh:mm:ss.")
+        logging.info(f"Training finished after {timedelta(seconds=overall_runtime)} hh:mm:ss.")
 
         logging.info(
             (
@@ -1262,8 +1262,10 @@ def evaluation_phase(rank, args, base_dir, run_id, genotype_to_evaluate, result_
             'max_mem_reserved_MB': mem_peak_reserved_MB_mean.item(),
             'total_params': total_params
         }
+        logging.info("Putting result_dict into result_queue")
         result_queue.put(result_dict)
         # before return, remove logging filehandler of current logfile, so that the following logs aren't written in the current log
+        logging.info("Successfully filled result_queue.")
         logging.getLogger().removeHandler(logging.getLogger().handlers[-1])
 
     logging.info(f"Rank {rank} waiting on barrier before destroy_process_group()")
