@@ -1266,6 +1266,7 @@ def evaluation_phase(rank, args, base_dir, run_id, genotype_to_evaluate, result_
         logging.info("Filling runtime")
         result_dict['overall_runtime'] = overall_runtime
         logging.info("Filling max mem allocated")
+        logging.info(f"Value of mem_peak_allocated_MB_mean is: {mem_peak_allocated_MB_mean}")
         result_dict['max_mem_allocated_MB'] = mem_peak_allocated_MB_mean.item()
         logging.info("Filling max mem reserved")
         result_dict['max_mem_reserved_MB'] = mem_peak_reserved_MB_mean.item()
