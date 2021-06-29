@@ -1231,6 +1231,11 @@ def evaluation_phase(rank, args, base_dir, run_id, genotype_to_evaluate, result_
 
     # memory stats for result dict
     if rank == 0:
+        logging.info(f"Entering barrier")
+    dist.barrier()
+    if rank == 0:
+        logging.info(f"Leaving barrier")
+    if rank == 0:
         logging.info("Calculating peak allocated and reserved memory")
     mem_peak_allocated_MB = torch.tensor(torch.cuda.max_memory_allocated() / 1e6).cuda(rank)
     mem_peak_reserved_MB = torch.tensor(torch.cuda.max_memory_reserved() / 1e6).cuda(rank)
