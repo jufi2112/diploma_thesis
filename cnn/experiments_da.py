@@ -331,6 +331,7 @@ def gaussian_process(args):
                     logging.info("Performing search phase...")
                     current_runtime += timer() - gp_start_time
                     gp_rng = torch.get_rng_state()
+                    torch.cuda.empty_cache()
                     try:
                         (
                             best_genotype,
@@ -393,6 +394,7 @@ def gaussian_process(args):
                 result_queue = smp.Queue()
                 current_runtime += timer() - gp_start_time
                 gp_rng = torch.get_rng_state()
+                torch.cuda.empty_cache()
                 try:
                     os.environ['MASTER_ADDR'] = 'localhost'
                     os.environ['MASTER_PORT'] = train_utils.find_free_port()
