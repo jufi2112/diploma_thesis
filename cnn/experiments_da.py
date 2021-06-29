@@ -430,7 +430,7 @@ def gaussian_process(args):
                         details['evaluation'][f"{lr_search}_{lr_eval}"] = e
                     continue
                     
-                valid_errors = torch.cat((valid_errors, val_err), dim=0)
+                valid_errors = val_err if valid_errors is None else torch.cat((valid_errors, val_err), dim=0)
 
                 # update incumbent
                 incumbent = train_utils.determine_incumbent(learning_rates, valid_errors)
