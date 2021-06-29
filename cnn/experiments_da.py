@@ -1252,16 +1252,36 @@ def evaluation_phase(rank, args, base_dir, run_id, genotype_to_evaluate, result_
         logging.info(f"Train accuracy of best weights: {best_observed['train']} %")
         logging.info(f"Validation accuracy of best weights: {best_observed['valid']} %")
         logging.info(f"\nCheckpoint of best weights can be found in: {os.path.join(checkpoint_dir, 'model_best.ckpt')}")
-        result_dict = {
-            'checkpoint_path': os.path.join(checkpoint_dir, 'model_best.ckpt'),
-            'runtime_best_observed': best_observed['runtime'],
-            'train_acc_best_observed': best_observed['train'],
-            'valid_acc_best_observed': best_observed['valid'],
-            'overall_runtime': overall_runtime,
-            'max_mem_allocated_MB': mem_peak_allocated_MB_mean.item(),
-            'max_mem_reserved_MB': mem_peak_reserved_MB_mean.item(),
-            'total_params': total_params
-        }
+        logging.info("Creating result dict...")
+        result_dict = {}
+        # fill dict to debug
+        logging.info("Filling checkpoint path")
+        result_dict['checkpoint_path'] = os.path.join(checkpoint_dir, 'model_best.ckpt')
+        logging.info("Filling runtime of best observed")
+        result_dict['runtime_best_observed'] = best_observed['runtime']
+        logging.info("Filling train_acc")
+        result_dict['train_acc_best_observed'] = best_observed['train']
+        logging.info("Filling valid acc")
+        result_dict['valid_acc_best_observed'] = best_observed['valid']
+        logging.info("Filling runtime")
+        result_dict['overall_runtime'] = overall_runtime
+        logging.info("Filling max mem allocated")
+        result_dict['max_mem_allocated_MB'] = mem_peak_allocated_MB_mean.item()
+        logging.info("Filling max mem reserved")
+        result_dict['max_mem_reserved_MB'] = mem_peak_reserved_MB_mean.item()
+        logging.info("Filling total params")
+        result_dict['total_params'] = total_params
+        logging.info("Finished filling result dict")
+        # result_dict = {
+        #     'checkpoint_path': os.path.join(checkpoint_dir, 'model_best.ckpt'),
+        #     'runtime_best_observed': best_observed['runtime'],
+        #     'train_acc_best_observed': best_observed['train'],
+        #     'valid_acc_best_observed': best_observed['valid'],
+        #     'overall_runtime': overall_runtime,
+        #     'max_mem_allocated_MB': mem_peak_allocated_MB_mean.item(),
+        #     'max_mem_reserved_MB': mem_peak_reserved_MB_mean.item(),
+        #     'total_params': total_params
+        # }
         logging.info("Putting result_dict into result_queue")
         result_queue.put(result_dict)
         # before return, remove logging filehandler of current logfile, so that the following logs aren't written in the current log
