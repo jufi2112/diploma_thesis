@@ -363,7 +363,7 @@ def gaussian_process(args):
                         torch.set_rng_state(gp_rng)
                         logging.info(f"Encountered the following exception during search: {e}")
                         gp_start_time = timer()
-                        if lr_search in details['search'].keys() and issubclass(details['search'][lr_search], Exception):
+                        if lr_search in details['search'].keys() and details['search'][lr_search] is not None and issubclass(details['search'][lr_search], Exception):
                             logging.info(f"Search for the given learning rate failed 2 times, removing this pair from the priors...")
                             learning_rates = torch.cat((learning_rates[:lr_index], learning_rates[lr_index+1:]), dim=0)
                         else:
@@ -425,7 +425,7 @@ def gaussian_process(args):
                     torch.set_rng_state(gp_rng)
                     logging.info(f"Encountered the following exception during evaluation: {e}")
                     gp_start_time = timer()
-                    if f"{lr_search}_{lr_eval}" in details['evaluation'].keys() and issubclass(details['evaluation'][f'{lr_search}_{lr_eval}'], Exception):
+                    if f"{lr_search}_{lr_eval}" in details['evaluation'].keys() and details['evaluation'][f'{lr_search}_{lr_eval}'] is not None and issubclass(details['evaluation'][f'{lr_search}_{lr_eval}'], Exception):
                         logging.info(f"Evaluation phase for the given learning rate failed 2 times, removing this pair from the priors...")
                         learning_rates = torch.cat((learning_rates[:lr_index], learning_rates[lr_index+1:]), dim=0)
                     else:
