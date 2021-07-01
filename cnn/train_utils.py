@@ -733,7 +733,8 @@ def load(
         architect.load_history(history)
 
     if gpu is not None:
-        map_location = {'cuda:%d' % 0: 'cuda:%d' % gpu}
+        #map_location = {'cuda:0': f'cuda:{gpu}'}
+        map_location = torch.device(f'cuda:{gpu}')
     checkpoint = torch.load(ckpt) if gpu is None else torch.load(ckpt, map_location=map_location)
 
     epochs = checkpoint["epochs"]

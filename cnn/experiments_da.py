@@ -953,6 +953,7 @@ def evaluation_phase(rank, args, base_dir, run_id, genotype_to_evaluate, result_
     #        logging.info(f"    Cuda device {i}: {torch.cuda.get_device_name(torch.cuda.device(i))}")
 
     torch.cuda.set_device(rank)
+    torch.cuda.empty_cache()
     if rank == 0:
         current_device = torch.cuda.current_device()
         logging.info(f"Current cuda device: {current_device} - {torch.cuda.get_device_name(current_device)}")
