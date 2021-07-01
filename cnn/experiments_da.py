@@ -1099,7 +1099,6 @@ def evaluation_phase(rank, args, base_dir, run_id, genotype_to_evaluate, result_
             )
             logging.info("This is included in the final runtime report.")
     except Exception as e:
-        raise e
         if rank == 0:
             logging.info(e)
         start_epochs = 0
