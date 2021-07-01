@@ -205,10 +205,13 @@ def gaussian_process(args):
             gp_rng
         ) = train_utils.load_gp_outer_loop_checkpoint(cwd)
         torch.set_rng_state(gp_rng)
+        iteration = -number_random_samples if valid_errors is None else (valid_errors.shape[0] - number_random_samples)
+        iters_trained = valid_errors.shape[0] if valid_errors.shape[0] > number_random_samples else 0
         logging.info("Found an existing outer-loop checkpoint.")
-        logging.info(f"    The GP was already trained for {learning_rates.shape[0] - number_random_samples} iterations.")
+        logging.info(f"    The GP was already trained for {iters_trained} iterations.")
         logging.info(f"    Runtime of resumed GP: {timedelta(seconds=previous_runtime)} (h:m:s)")
         current_runtime += previous_runtime
+        logging.info(f"    Continuing iteration {iteration}")
     else:
         # Sample <args.method.random_samples> values for search and evaluation learning rates at random or use provided values
         logging.info("No outer-loop checkpoint found, starting search from scratch.")
@@ -1075,11 +1078,22 @@ def evaluation_phase(rank, args, base_dir, run_id, genotype_to_evaluate, result_
 
     optimizer, scheduler = train_utils.setup_optimizer(model, args, len(train_queue))
 
+    if rank == 0:
+        logging.info("Entering barrier in front of checkpoint loading")
+    dist.barrier()
+    if rank == 0:
+        logging.info("Exited barrier")
+
     # Check if we've already trained
     try:
         start_epochs, _, previous_runtime, best_observed = train_utils.load(
             checkpoint_dir, rng_seed, model, optimizer, s3_bucket=None, gpu=rank
         )
+        if rank == 0:
+            logging.info("Entering barrier after successfully loading checkpoint")
+        dist.barrier()
+        if rank == 0:
+            logging.info("Exited barrier")
         if best_observed is None:
             best_observed = {
                 "train": 0.0,           # train accuracy of best epoch
@@ -1099,6 +1113,11 @@ def evaluation_phase(rank, args, base_dir, run_id, genotype_to_evaluate, result_
             )
             logging.info("This is included in the final runtime report.")
     except Exception as e:
+        if rank == 0:
+            logging.info("Entering barrier after checkpoint loading threw an exception")
+        dist.barrier()
+        if rank == 0:
+            logging.info("Exited barrier")
         if rank == 0:
             logging.info(e)
         start_epochs = 0
@@ -1370,6 +1389,7 @@ def search_phase(args, base_dir, run_id):
     if not torch.cuda.is_available():
         raise Exception("No GPU device available")
     torch.cuda.set_device(args.run.gpu)
+    torch.cuda.empty_cache()
     torch.backends.cudnn.benchmark=True
 
     current_device = torch.cuda.current_device()
