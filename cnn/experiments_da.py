@@ -206,12 +206,12 @@ def gaussian_process(args):
         ) = train_utils.load_gp_outer_loop_checkpoint(cwd)
         torch.set_rng_state(gp_rng)
         iteration = -number_random_samples if valid_errors is None else (valid_errors.shape[0] - number_random_samples)
-        iters_trained = valid_errors.shape[0] if valid_errors.shape[0] > number_random_samples else 0
+        pairs_trained = max(valid_errors.shape[0] - number_random_samples, 0)
         logging.info("Found an existing outer-loop checkpoint.")
-        logging.info(f"    The GP was already trained for {iters_trained} iterations.")
+        logging.info(f"    The GP has already been trained with {pairs_trained} learning rate pairs.")
         logging.info(f"    Runtime of resumed GP: {timedelta(seconds=previous_runtime)} (h:m:s)")
-        current_runtime += previous_runtime
         logging.info(f"    Continuing iteration {iteration}")
+        current_runtime += previous_runtime
     else:
         # Sample <args.method.random_samples> values for search and evaluation learning rates at random or use provided values
         logging.info("No outer-loop checkpoint found, starting search from scratch.")
@@ -418,7 +418,7 @@ def gaussian_process(args):
                     result = result_queue.get()
                     current_runtime += result['overall_runtime']
                     gp_start_time = timer()
-                    val_err = torch.tensor([[result['valid_acc_best_observed']]])
+                    val_err = 100 - torch.tensor([[result['valid_acc_best_observed']]])
                     details['evaluation'][f"{lr_search}_{lr_eval}"] = result
                     del result
                     logging.info(f"Evaluation phase finished after {timedelta(seconds=details['evaluation'][f'{lr_search}_{lr_eval}']['overall_runtime'])}")
