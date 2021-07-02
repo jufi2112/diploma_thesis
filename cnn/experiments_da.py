@@ -155,7 +155,7 @@ def main(args):
             incumbent,
             runtime,
             details
-        ) = gaussian_process(args)
+        ) = gaussian_process_search(args)
 
         logging.info(f"Gaussian Process search finished with the following reason: {reason}")
         logging.info(f"After a search time of {timedelta(seconds=runtime)}, the GP came up with the following incumbent: {incumbent}")
@@ -164,7 +164,7 @@ def main(args):
         raise ValueError("Unrecognized method.")
 
 
-def gaussian_process(args):
+def gaussian_process_search(args):
     """Searches for good performing learning rate candidates with a Gaussian Process
 
     Args:
@@ -1086,8 +1086,20 @@ def evaluation_phase(rank, args, base_dir, run_id, genotype_to_evaluate, result_
 
     # Check if we've already trained
     try:
-        start_epochs, _, previous_runtime, best_observed = train_utils.load(
-            checkpoint_dir, rng_seed, model, optimizer, s3_bucket=None, gpu=rank
+        (
+            start_epochs,
+            _,
+            previous_runtime,
+            best_observed,
+            global_peak_mem_allocated_MB,
+            global_peak_mem_reserved_MB
+        ) = train_utils.load(
+            checkpoint_dir,
+            rng_seed,
+            model,
+            optimizer,
+            s3_bucket=None,
+            gpu=rank
         )
         if rank == 0:
             logging.info("Entering barrier after successfully loading checkpoint")
@@ -1122,6 +1134,8 @@ def evaluation_phase(rank, args, base_dir, run_id, genotype_to_evaluate, result_
             logging.info(e)
         start_epochs = 0
         previous_runtime = 0
+        global_peak_mem_allocated_MB = 0.
+        global_peak_mem_reserved_MB = 0.
 
         best_observed = {
             "train": 0.0,           # train accuracy of best epoch
@@ -1204,14 +1218,16 @@ def evaluation_phase(rank, args, base_dir, run_id, genotype_to_evaluate, result_
             valid_top5_mean = valid_top5_tensor / world_size
             mem_peak_allocated_MB_mean = mem_peak_allocated_MB / world_size
             mem_peak_reserved_MB_mean = mem_peak_reserved_MB / world_size
+            global_peak_mem_allocated_MB = max(global_peak_mem_allocated_MB, mem_peak_allocated_MB_mean.item())
+            global_peak_mem_reserved_MB = max(global_peak_mem_reserved_MB, mem_peak_reserved_MB_mean.item())
             logging.info(f"| valid_acc: {valid_acc_mean} |")
             
             writer.add_scalar("Loss/valid", valid_obj_mean.item(), epoch)
             writer.add_scalar("Top1/valid", valid_acc_mean.item(), epoch)
             writer.add_scalar("Top5/valid", valid_top5_mean.item(), epoch)
 
-            writer.add_scalar("Mem/peak_allocated_MB", mem_peak_allocated_MB_mean.item(), epoch)
-            writer.add_scalar("Mem/peak_reserved_MB", mem_peak_reserved_MB_mean.item(), epoch)
+            writer.add_scalar("Mem/peak_allocated_MB", global_peak_mem_allocated_MB, epoch)
+            writer.add_scalar("Mem/peak_reserved_MB", global_peak_mem_reserved_MB, epoch)
 
             # Use validation accuracy to determine if we have obtained new best weights
             if valid_acc_mean > best_observed['valid']:
@@ -1231,7 +1247,9 @@ def evaluation_phase(rank, args, base_dir, run_id, genotype_to_evaluate, result_
                     runtime=(timer() - train_start_time + previous_runtime),
                     best_observed=best_observed,
                     best_eval=True,
-                    multi_process=True
+                    multi_process=True,
+                    max_mem_allocated_MB=global_peak_mem_allocated_MB,
+                    max_mem_reserved_MB=global_peak_mem_reserved_MB
                 )
 
             # Save checkpoint for current epoch
@@ -1243,7 +1261,9 @@ def evaluation_phase(rank, args, base_dir, run_id, genotype_to_evaluate, result_
                 optimizer,
                 runtime=(timer() - train_start_time + previous_runtime),
                 best_observed=best_observed,
-                multi_process=True
+                multi_process=True,
+                max_mem_allocated_MB=global_peak_mem_allocated_MB,
+                max_mem_reserved_MB=global_peak_mem_reserved_MB
             )
         #    dist.barrier()
         #else:
@@ -1251,34 +1271,8 @@ def evaluation_phase(rank, args, base_dir, run_id, genotype_to_evaluate, result_
         if args.train.scheduler != "cosine_mgpu":
             scheduler.step()
 
-    # memory stats for result dict
+    # Training finished
     if rank == 0:
-        logging.info(f"Entering barrier")
-    dist.barrier()
-    if rank == 0:
-        logging.info(f"Leaving barrier")
-    if rank == 0:
-        logging.info("Calculating peak allocated and reserved memory")
-    mem_peak_allocated_MB = torch.tensor(torch.cuda.max_memory_allocated() / 1e6).cuda(rank)
-    mem_peak_reserved_MB = torch.tensor(torch.cuda.max_memory_reserved() / 1e6).cuda(rank)
-    if rank == 0:
-        logging.info(f"Peak allocated memory: {mem_peak_allocated_MB}")
-        logging.info(f"Peak reserved memory: {mem_peak_reserved_MB}")
-
-    logging.info(f"Rank {rank} peak allocated: {mem_peak_allocated_MB}")
-    logging.info(f"Rank {rank} peak reserved: {mem_peak_reserved_MB}")
-
-    if rank == 0:
-        logging.info(f"Reducing memory tensors")
-    dist.reduce(mem_peak_allocated_MB, dst=0)
-    dist.reduce(mem_peak_reserved_MB, dst=0)
-    if rank == 0:
-        logging.info(f"Reduced rank {rank} allocated mem tensor: {mem_peak_allocated_MB}")
-        logging.info(f"Reduced rank {rank} reserved mem tensor: {mem_peak_reserved_MB}")
-
-    if rank == 0:
-        mem_peak_allocated_MB_mean = mem_peak_allocated_MB / world_size
-        mem_peak_reserved_MB_mean = mem_peak_reserved_MB / world_size
         train_end_time = timer()
         overall_runtime = train_end_time - train_start_time + previous_runtime
         logging.info(f"Training finished after {timedelta(seconds=overall_runtime)} hh:mm:ss.")
@@ -1292,45 +1286,27 @@ def evaluation_phase(rank, args, base_dir, run_id, genotype_to_evaluate, result_
         logging.info(f"Train accuracy of best weights: {best_observed['train']} %")
         logging.info(f"Validation accuracy of best weights: {best_observed['valid']} %")
         logging.info(f"\nCheckpoint of best weights can be found in: {os.path.join(checkpoint_dir, 'model_best.ckpt')}")
-        logging.info("Creating result dict...")
-        result_dict = {}
-        # fill dict to debug
-        logging.info("Filling checkpoint path")
-        result_dict['checkpoint_path'] = os.path.join(checkpoint_dir, 'model_best.ckpt')
-        logging.info("Filling runtime of best observed")
-        result_dict['runtime_best_observed'] = best_observed['runtime']
-        logging.info("Filling train_acc")
-        result_dict['train_acc_best_observed'] = best_observed['train']
-        logging.info("Filling valid acc")
-        result_dict['valid_acc_best_observed'] = best_observed['valid']
-        logging.info("Filling runtime")
-        result_dict['overall_runtime'] = overall_runtime
-        logging.info("Filling max mem allocated")
-        logging.info(f"Value of mem_peak_allocated_MB_mean is: {mem_peak_allocated_MB_mean}")
-        result_dict['max_mem_allocated_MB'] = mem_peak_allocated_MB_mean.item()
-        logging.info("Filling max mem reserved")
-        result_dict['max_mem_reserved_MB'] = mem_peak_reserved_MB_mean.item()
-        logging.info("Filling total params")
-        result_dict['total_params'] = total_params
-        logging.info("Finished filling result dict")
-        # result_dict = {
-        #     'checkpoint_path': os.path.join(checkpoint_dir, 'model_best.ckpt'),
-        #     'runtime_best_observed': best_observed['runtime'],
-        #     'train_acc_best_observed': best_observed['train'],
-        #     'valid_acc_best_observed': best_observed['valid'],
-        #     'overall_runtime': overall_runtime,
-        #     'max_mem_allocated_MB': mem_peak_allocated_MB_mean.item(),
-        #     'max_mem_reserved_MB': mem_peak_reserved_MB_mean.item(),
-        #     'total_params': total_params
-        # }
-        logging.info("Putting result_dict into result_queue")
+        result_dict = {
+            'checkpoint_path': os.path.join(checkpoint_dir, 'model_best.ckpt'),
+            'runtime_best_observed': best_observed['runtime'],
+            'train_acc_best_observed': best_observed['train'],
+            'valid_acc_best_observed': best_observed['valid'],
+            'overall_runtime': overall_runtime,
+            'max_mem_allocated_MB': global_peak_mem_allocated_MB,
+            'max_mem_reserved_MB': global_peak_mem_reserved_MB,
+            'total_params': total_params
+        }
         result_queue.put(result_dict)
+        logging.info(f"Results of evaluation put into queue.")
         # before return, remove logging filehandler of current logfile, so that the following logs aren't written in the current log
-        logging.info("Successfully filled result_queue.")
-        logging.getLogger().removeHandler(logging.getLogger().handlers[-1])
+        #logging.getLogger().removeHandler(logging.getLogger().handlers[-1])
 
-    logging.info(f"Rank {rank} waiting on barrier before destroy_process_group()")
+    if rank == 0:
+        logging.info("Entering barrier before destroying process group")
     dist.barrier()
+    if rank == 0:
+        logging.info("Exited barrier")
+        logging.getLogger().removeHandler(logging.getLogger().handlers[-1]) # when removing this line, uncomment the logger line above!
     dist.destroy_process_group()
     
 
@@ -1503,7 +1479,14 @@ def search_phase(args, base_dir, run_id):
 
     # Try to load previous checkpoint
     try:
-        start_epochs, history, previous_runtime, best_observed = train_utils.load(
+        (
+            start_epochs, 
+            history, 
+            previous_runtime, 
+            best_observed,
+            global_peak_mem_allocated_MB,
+            global_peak_mem_reserved_MB 
+        ) = train_utils.load(
             checkpoint_dir,
             rng_seed,
             model,
@@ -1532,6 +1515,8 @@ def search_phase(args, base_dir, run_id):
         logging.info(e)
         start_epochs = 0
         previous_runtime = 0
+        global_peak_mem_allocated_MB = 0.
+        global_peak_mem_reserved_MB = 0.
 
         best_observed = {
             "train": 0.0,           # for single-level search, used to keep track of best genotype
@@ -1648,10 +1633,10 @@ def search_phase(args, base_dir, run_id):
         own_writer.add_scalar('Top5/valid', valid_top5, epoch)
         logging.info(f"| valid_acc: {valid_acc} |")
         # memory stats
-        mem_peak_allocated_MB = torch.cuda.max_memory_allocated() / 1e6
-        mem_peak_reserved_MB = torch.cuda.max_memory_reserved() / 1e6
-        own_writer.add_scalar("Mem/peak_allocated_MB", mem_peak_allocated_MB, epoch)
-        own_writer.add_scalar("Mem/peak_reserved_MB", mem_peak_reserved_MB, epoch)
+        global_peak_mem_allocated_MB = max(global_peak_mem_allocated_MB, torch.cuda.max_memory_allocated() / 1e6)
+        global_peak_mem_reserved_MB = max(global_peak_mem_reserved_MB, torch.cuda.max_memory_reserved() / 1e6)
+        own_writer.add_scalar("Mem/peak_allocated_MB", global_peak_mem_allocated_MB, epoch)
+        own_writer.add_scalar("Mem/peak_reserved_MB", global_peak_mem_reserved_MB, epoch)
 
         if (args.search.single_level and train_acc > best_observed['train']) or (not args.search.single_level and valid_acc > best_observed['valid']):
                 best_observed['train'] = train_acc
@@ -1672,7 +1657,9 @@ def search_phase(args, base_dir, run_id):
             save_history=True,
             s3_bucket=args.run.s3_bucket,
             runtime=(timer()-train_start_time - overall_visualization_time + previous_runtime),
-            best_observed=best_observed
+            best_observed=best_observed,
+            max_mem_allocated_MB=global_peak_mem_allocated_MB,
+            max_mem_reserved_MB=global_peak_mem_reserved_MB
         )
 
         if args.train.scheduler != "cosine_mgpu":
@@ -1717,8 +1704,8 @@ def search_phase(args, base_dir, run_id):
         best_observed['train'],
         best_observed['valid'],
         overall_runtime,
-        torch.cuda.max_memory_allocated() / 1e6,
-        torch.cuda.max_memory_reserved() / 1e6
+        global_peak_mem_allocated_MB,
+        global_peak_mem_reserved_MB
     )
     
 

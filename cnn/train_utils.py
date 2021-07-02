@@ -596,7 +596,9 @@ def save(
     runtime=0.0,
     best_observed=None,
     best_eval=False,
-    multi_process=False
+    multi_process=False,
+    max_mem_allocated_MB=0,
+    max_mem_reserved_MB=0
 ):
     """
     Create checkpoint and save to directory.
@@ -621,6 +623,8 @@ def save(
             needs slight adaptation.
             Currently unused. If errors happen, use it again, see https://pytorch.org/tutorials/intermediate/ddp_tutorial.html
                 and https://pytorch.org/tutorials/beginner/saving_loading_models.html
+        max_mem_allocated_MB (float): Peak GPU memory allocated by PyTorch in MB.
+        max_mem_reserved_MB (float): Peak GPU memory reserved by PyTorch in MB.
     """
 
     checkpoint = {
@@ -629,7 +633,9 @@ def save(
         "optimizer": optimizer.state_dict(),
         "model": model.module.get_save_states() if multi_process else model.get_save_states(),
         #model.get_save_states(), #{"state_dict": model.module.state_dict()} if multi_process else model.get_save_states(),   # hack to work with distributed data parallel
-        "runtime": runtime
+        "runtime": runtime,
+        "max_mem_allocated_MB": max_mem_allocated_MB,
+        "max_mem_reserved_MB": max_mem_reserved_MB
     }
 
     if architect is not None:
@@ -709,6 +715,8 @@ def load(
         history
         int: Current overall runtime of the model
         dict: Properties of the currently best observed genotype
+        float: Peak GPU memory allocated by PyTorch in MB.
+        float: Peak GPU memory reserved by PyTorch in MB.
     """
     # Try to download log and ckpt from s3 first to see if a ckpt exists.
     ckpt = os.path.join(folder, "model_best.ckpt") if best_eval else os.path.join(folder, "model.ckpt")
@@ -755,11 +763,14 @@ def load(
         best_observed = None
     if architect is not None:
         architect.load_states(checkpoint["architect"])
+    
+    max_mem_allocated_MB = checkpoint['max_mem_allocated_MB'] if "max_mem_allocated_MB" in checkpoint.keys() else 0.
+    max_mem_reserved_MB = checkpoint['max_mem_reserved_MB'] if 'max_mem_reserved_MB' in checkpoint.keys() else 0.
 
     #logging.info(f"Resumed model trained for {epochs} epochs")
     #logging.info(f"Resumed model trained for {timedelta(seconds=runtime)} hh:mm:ss")
 
-    return epochs, history, runtime, best_observed
+    return epochs, history, runtime, best_observed, max_mem_allocated_MB, max_mem_reserved_MB
 
 
 def infer(valid_queue, model, criterion, report_freq=50, discrete=False, rank=None):
