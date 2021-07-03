@@ -1299,14 +1299,16 @@ def evaluation_phase(rank, args, base_dir, run_id, genotype_to_evaluate, result_
         result_queue.put(result_dict)
         logging.info(f"Results of evaluation put into queue.")
         # before return, remove logging filehandler of current logfile, so that the following logs aren't written in the current log
-        #logging.getLogger().removeHandler(logging.getLogger().handlers[-1])
+        logging.getLogger().removeHandler(logging.getLogger().handlers[-1])
 
-    if rank == 0:
-        logging.info("Entering barrier before destroying process group")
+    # if rank == 0:
+    #     logging.info("Entering barrier before destroying process group")
+    print(f'Rank {rank} entering barrier before destroying process group', flush=True)
     dist.barrier()
-    if rank == 0:
-        logging.info("Exited barrier")
-        logging.getLogger().removeHandler(logging.getLogger().handlers[-1]) # when removing this line, uncomment the logger line above!
+    print(f'Rank {rank} existing barrier.', flush=True)
+    # if rank == 0:
+    #     logging.info("Exited barrier")
+    #     logging.getLogger().removeHandler(logging.getLogger().handlers[-1]) # when removing this line, uncomment the logger line above!
     dist.destroy_process_group()
     
 
