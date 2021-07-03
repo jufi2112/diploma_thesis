@@ -1303,9 +1303,8 @@ def evaluation_phase(rank, args, base_dir, run_id, genotype_to_evaluate, result_
 
     # if rank == 0:
     #     logging.info("Entering barrier before destroying process group")
-    print(f'Rank {rank} entering barrier before destroying process group', flush=True)
-    dist.barrier()
-    print(f'Rank {rank} existing barrier.', flush=True)
+    print(f'Rank {rank} before destroying process group', flush=True)
+    #dist.barrier()
     # if rank == 0:
     #     logging.info("Exited barrier")
     #     logging.getLogger().removeHandler(logging.getLogger().handlers[-1]) # when removing this line, uncomment the logger line above!
