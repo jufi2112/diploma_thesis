@@ -206,7 +206,7 @@ def gaussian_process_search(args):
         ) = train_utils.load_gp_outer_loop_checkpoint(cwd)
         torch.set_rng_state(gp_rng)
         iteration = -number_random_samples if valid_errors is None else (valid_errors.shape[0] - number_random_samples)
-        pairs_trained = max(valid_errors.shape[0] - number_random_samples, 0)
+        pairs_trained = 0 if valid_errors is None else max(valid_errors.shape[0] - number_random_samples, 0)
         logging.info("Found an existing outer-loop checkpoint.")
         logging.info(f"    The GP has already been trained with {pairs_trained} learning rate pairs.")
         logging.info(f"    Runtime of resumed GP: {timedelta(seconds=previous_runtime)} (h:m:s)")
