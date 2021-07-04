@@ -903,7 +903,7 @@ def evaluation_phase(rank, args, base_dir, run_id, genotype_to_evaluate, result_
     """
     world_size = args.run.number_gpus
     dist.init_process_group(
-        backend="mpi",
+        backend="nccl",
         init_method="env://",
         world_size=world_size,
         rank=rank
@@ -1213,6 +1213,7 @@ def evaluation_phase(rank, args, base_dir, run_id, genotype_to_evaluate, result_
         mem_peak_reserved_MB = torch.tensor(torch.cuda.max_memory_reserved() / 1e6).cuda(rank)
 
         logging.info(f"Max allocated GPU {rank}: {mem_peak_allocated_MB}")
+        logging.info(f"MAx reserved GPU {rank}: {mem_peak_reserved_MB}")
 
         dist.reduce(mem_peak_allocated_MB, dst=0)
         dist.reduce(mem_peak_reserved_MB, dst=0)
@@ -1222,12 +1223,15 @@ def evaluation_phase(rank, args, base_dir, run_id, genotype_to_evaluate, result_
             valid_obj_mean = valid_obj_tensor / world_size
             valid_top5_mean = valid_top5_tensor / world_size
             logging.info(f"reduced mem_peak_allocated_MB = {mem_peak_allocated_MB}")
+            logging.info(f"reduced mem_peak_reserved_MB = {mem_peak_reserved_MB}")
             mem_peak_allocated_MB_mean = mem_peak_allocated_MB / world_size
             logging.info(f"mem_peak_allocated_MB_mean = {mem_peak_allocated_MB_mean}")
             mem_peak_reserved_MB_mean = mem_peak_reserved_MB / world_size
+            logging.info(f"mem_peak_reserved_MB_mean = {mem_peak_reserved_MB_mean}")
             global_peak_mem_allocated_MB = max(global_peak_mem_allocated_MB, mem_peak_allocated_MB_mean.item())
             global_peak_mem_reserved_MB = max(global_peak_mem_reserved_MB, mem_peak_reserved_MB_mean.item())
             logging.info(f"Global max allocated: {global_peak_mem_allocated_MB}")
+            logging.info(f"Global max reserved: {global_peak_mem_reserved_MB}")
             logging.info(f"| valid_acc: {valid_acc_mean} |")
             
             writer.add_scalar("Loss/valid", valid_obj_mean.item(), epoch)
