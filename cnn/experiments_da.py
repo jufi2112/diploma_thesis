@@ -1201,9 +1201,9 @@ def evaluation_phase(rank, args, base_dir, run_id, genotype_to_evaluate, result_
         valid_obj_tensor = torch.tensor(valid_obj).cuda(rank)
         valid_top5_tensor = torch.tensor(valid_top5).cuda(rank)
 
-        # dist.reduce(valid_acc_tensor, dst=0)
-        # dist.reduce(valid_obj_tensor, dst=0)
-        # dist.reduce(valid_top5_tensor, dst=0)
+        dist.reduce(valid_acc_tensor, dst=0)
+        dist.reduce(valid_obj_tensor, dst=0)
+        dist.reduce(valid_top5_tensor, dst=0)
         
         # memory stats
         # mem_peak_allocated_MB = torch.cuda.max_memory_allocated() / 1e6
