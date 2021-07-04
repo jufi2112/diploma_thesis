@@ -1078,11 +1078,11 @@ def evaluation_phase(rank, args, base_dir, run_id, genotype_to_evaluate, result_
 
     optimizer, scheduler = train_utils.setup_optimizer(model, args, len(train_queue))
 
-    if rank == 0:
-        logging.info("Entering barrier in front of checkpoint loading")
-    dist.barrier()
-    if rank == 0:
-        logging.info("Exited barrier")
+    # if rank == 0:
+    #     logging.info("Entering barrier in front of checkpoint loading")
+    # dist.barrier()
+    # if rank == 0:
+    #     logging.info("Exited barrier")
 
     # Check if we've already trained
     try:
@@ -1101,11 +1101,11 @@ def evaluation_phase(rank, args, base_dir, run_id, genotype_to_evaluate, result_
             s3_bucket=None,
             gpu=rank
         )
-        if rank == 0:
-            logging.info("Entering barrier after successfully loading checkpoint")
-        dist.barrier()
-        if rank == 0:
-            logging.info("Exited barrier")
+        # if rank == 0:
+        #     logging.info("Entering barrier after successfully loading checkpoint")
+        # dist.barrier()
+        # if rank == 0:
+        #     logging.info("Exited barrier")
         if best_observed is None:
             best_observed = {
                 "train": 0.0,           # train accuracy of best epoch
@@ -1125,11 +1125,11 @@ def evaluation_phase(rank, args, base_dir, run_id, genotype_to_evaluate, result_
             )
             logging.info("This is included in the final runtime report.")
     except Exception as e:
-        if rank == 0:
-            logging.info("Entering barrier after checkpoint loading threw an exception")
-        dist.barrier()
-        if rank == 0:
-            logging.info("Exited barrier")
+        # if rank == 0:
+        #     logging.info("Entering barrier after checkpoint loading threw an exception")
+        # dist.barrier()
+        # if rank == 0:
+        #     logging.info("Exited barrier")
         if rank == 0:
             logging.info(e)
         start_epochs = 0
