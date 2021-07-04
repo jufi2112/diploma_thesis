@@ -1209,6 +1209,8 @@ def evaluation_phase(rank, args, base_dir, run_id, genotype_to_evaluate, result_
         mem_peak_allocated_MB = torch.tensor(torch.cuda.max_memory_allocated() / 1e6).cuda(rank)
         mem_peak_reserved_MB = torch.tensor(torch.cuda.max_memory_reserved() / 1e6).cuda(rank)
 
+        logging.info(f"Max allocated GPU {rank}: {mem_peak_allocated_MB}")
+
         dist.reduce(mem_peak_allocated_MB, dst=0)
         dist.reduce(mem_peak_reserved_MB, dst=0)
 
@@ -1220,6 +1222,7 @@ def evaluation_phase(rank, args, base_dir, run_id, genotype_to_evaluate, result_
             mem_peak_reserved_MB_mean = mem_peak_reserved_MB / world_size
             global_peak_mem_allocated_MB = max(global_peak_mem_allocated_MB, mem_peak_allocated_MB_mean.item())
             global_peak_mem_reserved_MB = max(global_peak_mem_reserved_MB, mem_peak_reserved_MB_mean.item())
+            logging.info(f"Global max allocated: {global_peak_mem_allocated_MB}")
             logging.info(f"| valid_acc: {valid_acc_mean} |")
             
             writer.add_scalar("Loss/valid", valid_obj_mean.item(), epoch)
