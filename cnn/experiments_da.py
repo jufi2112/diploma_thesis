@@ -1078,11 +1078,11 @@ def evaluation_phase(rank, args, base_dir, run_id, genotype_to_evaluate, result_
 
     optimizer, scheduler = train_utils.setup_optimizer(model, args, len(train_queue))
 
-    # if rank == 0:
-    #     logging.info("Entering barrier in front of checkpoint loading")
-    # dist.barrier()
-    # if rank == 0:
-    #     logging.info("Exited barrier")
+    if rank == 0:
+        logging.info("Entering barrier in front of checkpoint loading")
+    dist.barrier()
+    if rank == 0:
+        logging.info("Exited barrier")
 
     # Check if we've already trained
     try:
@@ -1101,11 +1101,11 @@ def evaluation_phase(rank, args, base_dir, run_id, genotype_to_evaluate, result_
             s3_bucket=None,
             gpu=rank
         )
-        # if rank == 0:
-        #     logging.info("Entering barrier after successfully loading checkpoint")
-        # dist.barrier()
-        # if rank == 0:
-        #     logging.info("Exited barrier")
+        if rank == 0:
+            logging.info("Entering barrier after successfully loading checkpoint")
+        dist.barrier()
+        if rank == 0:
+            logging.info("Exited barrier")
         if best_observed is None:
             best_observed = {
                 "train": 0.0,           # train accuracy of best epoch
@@ -1125,11 +1125,11 @@ def evaluation_phase(rank, args, base_dir, run_id, genotype_to_evaluate, result_
             )
             logging.info("This is included in the final runtime report.")
     except Exception as e:
-        # if rank == 0:
-        #     logging.info("Entering barrier after checkpoint loading threw an exception")
-        # dist.barrier()
-        # if rank == 0:
-        #     logging.info("Exited barrier")
+        if rank == 0:
+            logging.info("Entering barrier after checkpoint loading threw an exception")
+        dist.barrier()
+        if rank == 0:
+            logging.info("Exited barrier")
         if rank == 0:
             logging.info(e)
         start_epochs = 0
@@ -1287,6 +1287,12 @@ def evaluation_phase(rank, args, base_dir, run_id, genotype_to_evaluate, result_
         if args.train.scheduler != "cosine_mgpu":
             scheduler.step()
 
+    if rank == 0:
+        logging.info(f"Entering barrier after training finished")
+    dist.barrier()
+    if rank == 0:
+        logging.info("Exiting barrier")
+
     # Training finished
     if rank == 0:
         train_end_time = timer()
@@ -1315,15 +1321,14 @@ def evaluation_phase(rank, args, base_dir, run_id, genotype_to_evaluate, result_
         result_queue.put(result_dict)
         logging.info(f"Results of evaluation put into queue.")
         # before return, remove logging filehandler of current logfile, so that the following logs aren't written in the current log
-        logging.getLogger().removeHandler(logging.getLogger().handlers[-1])
+        #logging.getLogger().removeHandler(logging.getLogger().handlers[-1])
 
-    # if rank == 0:
-    #     logging.info("Entering barrier before destroying process group")
-    print(f'Rank {rank} before destroying process group', flush=True)
-    #dist.barrier()
-    # if rank == 0:
-    #     logging.info("Exited barrier")
-    #     logging.getLogger().removeHandler(logging.getLogger().handlers[-1]) # when removing this line, uncomment the logger line above!
+    if rank == 0:
+        logging.info("Entering barrier before destroying process group")
+    dist.barrier()
+    if rank == 0:
+        logging.info("Exited barrier")
+        logging.getLogger().removeHandler(logging.getLogger().handlers[-1]) # when removing this line, uncomment the logger line above!
     dist.destroy_process_group()
     
 
