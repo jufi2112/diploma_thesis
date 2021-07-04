@@ -903,7 +903,7 @@ def evaluation_phase(rank, args, base_dir, run_id, genotype_to_evaluate, result_
     """
     world_size = args.run.number_gpus
     dist.init_process_group(
-        backend="nccl",
+        backend="mpi",
         init_method="env://",
         world_size=world_size,
         rank=rank

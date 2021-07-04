@@ -15,8 +15,8 @@
 #SBATCH -o /beegfs/global0/ws/s8732099-diploma_thesis/slurm_output/exp_2/a100_gp_seed_63_normal.out
 #SBATCH -e /beegfs/global0/ws/s8732099-diploma_thesis/slurm_output/exp_2/a100_gp_seed_63_error.out
 
-module load modenv/hiera  GCCcore/8.3.0  Python/3.7.4
-source /home/s8732099/.venv/gaea_extended_alpha/bin/activate
+module load modenv/hiera  GCC/10.2.0  CUDA/11.1.1  OpenMPI/4.0.5  PyTorch/1.7.1
+source /home/s8732099/.venv/gaea_alpha_new/bin/activate
 export PYTHONPATH=$PYTHONPATH:/beegfs/global0/ws/s8732099-diploma_thesis/git/diploma_thesis/AutoDL-Projects
 
 python /beegfs/global0/ws/s8732099-diploma_thesis/git/diploma_thesis/cnn/experiments_da.py \
