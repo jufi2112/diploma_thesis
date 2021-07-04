@@ -1221,7 +1221,9 @@ def evaluation_phase(rank, args, base_dir, run_id, genotype_to_evaluate, result_
             valid_acc_mean = valid_acc_tensor / world_size
             valid_obj_mean = valid_obj_tensor / world_size
             valid_top5_mean = valid_top5_tensor / world_size
+            logging.info(f"reduced mem_peak_allocated_MB = {mem_peak_allocated_MB}")
             mem_peak_allocated_MB_mean = mem_peak_allocated_MB / world_size
+            logging.info(f"mem_peak_allocated_MB_mean = {mem_peak_allocated_MB_mean}")
             mem_peak_reserved_MB_mean = mem_peak_reserved_MB / world_size
             global_peak_mem_allocated_MB = max(global_peak_mem_allocated_MB, mem_peak_allocated_MB_mean.item())
             global_peak_mem_reserved_MB = max(global_peak_mem_reserved_MB, mem_peak_reserved_MB_mean.item())
