@@ -25,11 +25,6 @@ hydra:
     run:
         dir: D:\\Users\\Julien\\Documents\\Diplom_Results\\experiments_da\\${method.name}
 
-run_eval_phase:
-    # due to time constraints, only perform evaluation on 300 instead of 600 epochs
-    epochs: 300
-    scheduler_epochs: 300
-
 train_search_phase:
     init_channels: 40
 

@@ -21,14 +21,6 @@ from torch.autograd import Variable
 from datetime import timedelta
 from timeit import default_timer as timer
 
-from botorch.models import SingleTaskGP
-from botorch.fit import fit_gpytorch_model
-from botorch.utils import standardize
-from gpytorch.mlls import ExactMarginalLogLikelihood
-from botorch.acquisition import UpperConfidenceBound
-from botorch.acquisition.analytic import ExpectedImprovement
-from botorch.optim import optimize_acqf
-
 import train_utils
 import visualize
 from genotypes_to_visualize import Genotype
@@ -176,6 +168,17 @@ def gaussian_process_search(args):
         float: Runtime of the GP in seconds.
         dict: Details of the search process.
     """
+    # experiment 1 (grid search) uses a different environment (PyTorch 1.6) 
+    # which does not support botorch and gpytorch 
+    # --> only try to load these packages when we use gp (experiment 2)
+    from botorch.models import SingleTaskGP
+    from botorch.fit import fit_gpytorch_model
+    from botorch.utils import standardize
+    from gpytorch.mlls import ExactMarginalLogLikelihood
+    from botorch.acquisition import UpperConfidenceBound
+    from botorch.acquisition.analytic import ExpectedImprovement
+    from botorch.optim import optimize_acqf
+    
     # setup logging
     cwd = os.getcwd()
     log = os.path.join(cwd, f"log_gaussian_process_seed_{args.run_search_phase.seed}.txt")
@@ -411,7 +414,8 @@ def gaussian_process_search(args):
                             result_queue,
                             lr_search
                         ),
-                        nprocs=args.run.number_gpus
+                        nprocs=args.run.number_gpus,
+                        join=True
                     )
                     logging.info("Evaluation phase completed successfully")
                     torch.set_rng_state(gp_rng)
