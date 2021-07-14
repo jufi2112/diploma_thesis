@@ -1,4 +1,4 @@
-name: gaea_p_ml
+name: gaea_exp2_ml
 channels:
     - pytorch
     - conda-forge

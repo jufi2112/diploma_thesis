@@ -1,4 +1,4 @@
-name: gaea_p_alpha
+name: gaea_exp2_alpha
 channels:
     - pytorch
     - conda-forge
