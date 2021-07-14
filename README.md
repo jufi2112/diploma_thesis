@@ -1,5 +1,5 @@
 # Diploma Thesis
-This is the repository for my diploma thesis in computer science at the TU Dresden on the topic of _TODO_.
+This is the repository for my diploma thesis in computer science at the TU Dresden on "Enhancing Single Step Neural Architecture Search by Two Stage Meta-Parameter Optimization".
 
 ## Usage of Existing Code
 My work is based on a fork from the repository of [Geometry-Aware Gradient Algorithms for Neural Architecture Search](https://arxiv.org/pdf/2004.07802.pdf) (short _GAEA_) which I extended to allow the tuning of hyperparameters during the search and evaluation phases of single-level neural architecture search (_NAS_). While not explicitely stated, the [GAEA repository](https://github.com/liamcli/gaea_release) uses code from the [PC-DARTS repository](https://github.com/yuhuixu1993/PC-DARTS) which in turn uses code from the original [DARTS repository](https://github.com/quark0/darts). While the original DARTS code is licensed under the Apache License 2.0, _PC-DARTS_ and _GAEA_ are missing a license information. Therefore, this repository uses the Apache License 2.0 of the original DARTS repository.
