@@ -18,7 +18,7 @@ There are different requirements for experiments 1 and 2 because they are execut
 
 Steps to create a new venv environment and install the requirements into it:
 - `python -m venv <name>`
-- `source <name>/bin/activate` (<name> should now appear in front of your input prompt)
+- `source <name>/bin/activate` (\<name> should now appear in front of your input prompt)
 - make sure that `which python` lists your newly created environment
 - `python -m pip install -r <requirements_file>`
 
