@@ -33,7 +33,7 @@ python /scratch/ws/1/s8732099-da/git/gaea_release/cnn/experiments_da.py \
     run_search_phase.n_threads_data=0 \
     run_eval_phase.n_threads_data=0 \
     run_eval_phase.number_gpus=6 \
-    train_search_phase.batch_size=128 \
+    train_search_phase.batch_size=256 \
     train_eval_phase.batch_size=128 \
     hydra.run.dir=/scratch/ws/1/s8732099-da/experiments_da/exp_1/v100/\${method.name}-batch_size_256
 

@@ -34,7 +34,6 @@ class ArchitectEDARTS(Architect):
 
     Attributes:
         learn_edges (bool): Whether edges should be learned. Set to false for EDARTS.
-            If you want to learn edges, utilize EEDARTS
         trace_norm: @see https://www.quantiki.org/wiki/trace-norm
         lr (float): Learning rate for architecture updates
         edge_lr (float): Learning rate for edge updates.
@@ -71,6 +70,8 @@ class ArchitectEDARTS(Architect):
         self.gd = args.search.gd
 
     def initialize_alphas(self):
+        """Uniformly initializes architecture weights ("alphas")
+        """
         k = self.n_edges
         num_ops = self.model._num_ops
         for ct in self.cell_types:
@@ -94,6 +95,8 @@ class ArchitectEDARTS(Architect):
         return scale
 
     def initialize_edge_weights(self):
+        """Initializes edge weights of PC-DARTS ("betas")
+        """
         requires_grad = False
         scale = 1
         if self.learn_edges:
@@ -112,6 +115,7 @@ class ArchitectEDARTS(Architect):
         return self.edges
 
     def step(self, input_train, target_train, input_valid, target_valid, eta, **kwargs):
+        """Performs gradient updates for architectural weights"""
         self.model.zero_grad()
         self.zero_arch_var_grad()
         self.set_model_alphas()

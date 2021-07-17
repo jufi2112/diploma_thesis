@@ -24,6 +24,7 @@ python /beegfs/global0/ws/s8732099-diploma_thesis/git/diploma_thesis/cnn/experim
     run_search_phase.seed=21 \
     run_eval_phase.seed=12 \
     method.gp_seed=63 \
+    method.extended_learning_rates=false \
     run_search_phase.data=/beegfs/global0/ws/s8732099-diploma_thesis/data \
     run_eval_phase.data=/beegfs/global0/ws/s8732099-diploma_thesis/data \
     run_search_phase.autodl=/beegfs/global0/ws/s8732099-diploma_thesis/git/diploma_thesis/AutoDL-Projects \

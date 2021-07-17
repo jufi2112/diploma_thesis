@@ -38,6 +38,7 @@ def find_free_port():
         s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         return str(s.getsockname()[1])
 
+
 class AvgrageMeter(object):
     def __init__(self):
         self.reset()
@@ -912,48 +913,71 @@ def load_gp_outer_loop_checkpoint(folder):
     Returns:
         torch.tensor: Tensor containing the learning rate priors of the GP.
         torch.tensor: Tensor containing the corresponding validation errors for the learning rates.
+        torch.tensor: Tensor containing the acquisition function values for the learning rate candidate pairs that were sampled by the GP.
         dict: Dictionary containing the currently best observed learning rates (['lrs']) and corresponding validation error (['valid_error']) (the incumbent).
         float: Overall runtime of the GP in seconds.
         int: Number of randomly sampled priors at the beginning of the search.
         dict: Details of each search and evaluation run.
         torch.ByteTensor: The random state of the GP.
+        list: List of learning rates searched with this checkpoint.
     """
     ckpt = os.path.join(folder, 'outer_loop.ckpt')
     checkpoint = torch.load(ckpt)
     torch.set_rng_state(checkpoint['rng_state'])
 
+    # First iteration did not save this attribute and only searched for model weight learning rates
+    searched_learning_rates = checkpoint.get('searched_learning_rates', default=["w_search", "w_eval"])
+
+    acquisition_values = checkpoint.get('acquisition_values', default=None)
+
     return (
         checkpoint['learning_rates'], 
         checkpoint['valid_errors'], 
+        acquisition_values,
         checkpoint['incumbent'], 
         checkpoint['runtime'], 
         checkpoint['number_randomly_sampled'], 
         checkpoint['details'],
-        checkpoint['rng_state']
+        checkpoint['rng_state'],
+        searched_learning_rates
     )
 
     
-def save_gp_outer_loop_checkpoint(folder, learning_rates, valid_errors, incumbent, runtime, number_randomly_sampled, details, random_state):
+def save_gp_outer_loop_checkpoint(
+    folder,
+    learning_rates,
+    valid_errors,
+    acquisition_values,
+    incumbent,
+    runtime,
+    number_randomly_sampled,
+    details,
+    random_state,
+    learning_rates_searched):
     """Saves the outer loop checkpoint of the Gaussian Process.
 
     Args:
         folder (str): Directory where the checkpoint should be saved to.
         learning_rates (torch.tensor): Tensor containing the learning rate priors for the GP.
         valid_errors (torch.tensor): Tensor containing the validation errors associated with the learning rates.
+        acquisition_values (torch.tensor): Tensor containing the acquisition values for the learning rate candidates sampled by the GP.
         incumbent (dict): The currently best observed pair of learning rates with their associated validation error.
         runtime (float): Current runtime of the GP in seconds.
         number_randomly_sampled (int): Number of random priors the GP starts with.
         details (dict): Dictionary containing the details of every search and evaluation phase.
         random_state (torch.ByteTensor): The random state of the GP.
+        learning_rates_searched (list): List stating what learning rates have been searched.
     """
     checkpoint = {
         'learning_rates': learning_rates,
         'valid_errors': valid_errors,
+        'acquisition_values': acquisition_values,
         'incumbent': incumbent,
         'runtime': runtime,
         'number_randomly_sampled': number_randomly_sampled,
         'details': details,
-        'rng_state': random_state
+        'rng_state': random_state,
+        'searched_learning_rates': learning_rates_searched
     }
     ckpt = os.path.join(folder, 'outer_loop.ckpt')
     ckpt_part = ckpt + ".part"
@@ -970,6 +994,7 @@ def determine_incumbent(learning_rates, valid_errors):
 
     Returns:
         dict: The incumbent.
+        int: Position inside valid_errors where the best performing validation error was found.
     """
     pos_best = torch.argmin(valid_errors)
 
@@ -977,5 +1002,49 @@ def determine_incumbent(learning_rates, valid_errors):
         'lrs': learning_rates[pos_best],
         'valid_error': valid_errors[pos_best]
     }
-    return incumbent
-    
+    return incumbent, pos_best
+
+
+def draw_random_learning_rates(args, learning_rates_to_sample, number_random_samples):
+    """Draws the given number of random samples for the given learning rates with the distribution specified in args.method
+
+    Args:
+        args (OmegaConf): Hyperparameters. Contain information for the distribution where samples should be drawn from.
+        learning_rates_to_sample (list of str): List containing all learning rates (and their order) for which random samples should be drawn.
+        number_random_samples (int): Number of random samples that should be drawn.
+
+    Returns:
+        torch.Tensor: number_random_samples x len(learning_rates_to_sample) dimensional tensor where each row contains random samples for the learning rates specified in learning_rates_to_sample (in their ordering)
+    """
+    samples = []
+    for val in learning_rates_to_sample:
+        random_sample = torch.FloatTensor(
+            number_random_samples,
+            1
+        ).uniform_(
+            args.method.learning_rate_interval[val][0] + args.method.interval_epsilon[val][0],
+            args.method.learning_rate_interval[val][1] - args.method.interval_epsilon[val][1]
+        )
+        samples.append(random_sample)
+    return torch.cat(samples, dim=1)
+
+
+def get_lr_run_identifier(lrs):
+    """Computes the run identifier for the given learning rates. Search identifier will not contain w_eval.
+
+    Args:
+        lrs (dict): That that contains the learning rate for every searched learning rate.
+
+    Returns:
+        str: String that uniquely represents a run with the given learning rates.
+    """
+    run_identifier = ""
+    for val in ['w_search', 'alpha', 'beta']:
+        try:
+            run_identifier += f"{val}-{lrs[val]}_"
+        except KeyError:
+            break
+    if 'w_eval' in lrs.keys():
+        run_identifier += f"w_eval-{lrs['w_eval']}_"
+    run_identifier = run_identifier[:-1]
+    return run_identifier

@@ -31,7 +31,7 @@ python /beegfs/global0/ws/s8732099-diploma_thesis/git/diploma_thesis/cnn/experim
     run_search_phase.n_threads_data=1 \
     run_eval_phase.n_threads_data=1 \
     train_search_phase.batch_size=256 \
-    train_eval_phase.batch_size=256 \
+    train_eval_phase.batch_size=128 \
     hydra.run.dir=/beegfs/global0/ws/s8732099-diploma_thesis/experiments_da/exp_1_data-shuffle_false/v100/\${method.name}-batch_size_\${train_search_phase.batch_size}
 
 exit 0

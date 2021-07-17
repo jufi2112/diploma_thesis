@@ -2,12 +2,14 @@
     name: "gaussian_process" # used as directory name --> no invalid characters
     mode: "sequential" # search_only, evaluate_only, sequential
 
+    extended_learning_rates: true # false --> only search for model weight learning rates; true --> also search for alpha and beta learning rates
+
     # interval from where the learning rates should be sampled (both boundaries included)
     # if you want to exclude a boundary, provide an epsilon in interval_epsilon
-    learning_rate_interval: {'search': [0, 1], 'evaluation': [0, 1]}
+    learning_rate_interval: {'w_search': [0, 1], 'w_eval': [0, 1], 'alpha': [0, 1], 'beta': [0, 1]}
 
     # By default, torch uniform samples the both interval boundaries inclusively. If you don't want this, you can provide an epsilon which is added / subtracted from the boundary
-    interval_epsilon: {'search': [1e-6, 1e-6], 'evaluation': [1e-6, 1e-6]}
+    interval_epsilon: {'w_search': [1e-6, 1e-6], 'w_eval': [1e-6, 1e-6], 'alpha': [1e-6, 1e-6], 'beta': [1e-6, 1e-6]}
 
     random_samples: 4
 
