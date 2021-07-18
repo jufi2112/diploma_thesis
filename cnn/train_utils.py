@@ -926,9 +926,9 @@ def load_gp_outer_loop_checkpoint(folder):
     torch.set_rng_state(checkpoint['rng_state'])
 
     # First iteration did not save this attribute and only searched for model weight learning rates
-    searched_learning_rates = checkpoint.get('searched_learning_rates', default=["w_search", "w_eval"])
+    searched_learning_rates = checkpoint.get('searched_learning_rates', ["w_search", "w_eval"])
 
-    acquisition_values = checkpoint.get('acquisition_values', default=None)
+    acquisition_values = checkpoint.get('acquisition_values', None)
 
     return (
         checkpoint['learning_rates'], 
