@@ -7,8 +7,22 @@ from train_utils import drop_path
 
 class Cell(nn.Module):
     def __init__(self, genotype, C_prev_prev, C_prev, C, reduction, reduction_prev):
+        """Definition of a cell.
+        
+        Args:
+            genotype (namedTuple): Building instruction of the cell.
+            C_prev_prev (int): Number of channels of input 0.
+            C_prev (int): Number of channels of input 1.
+            C (int): Number of channels for operations inside this cell.
+                Since C_prev_prev and C_prev while be larger than C, they will get downsampled by a 1x1 convolution.
+            reduction (bool): Whether this cell is a reduction cell.
+            reduction_prev (bool): Whether input 1 was produced by a reduction cell.            
+        """
         super(Cell, self).__init__()
-        print(C_prev_prev, C_prev, C)
+        # prints #input channels from input 0, #input channels from input 1, target #input channels for operations performed in this cell
+        # #channels from input 0 and 1 are not of their target size according to init_channels but a multiple of this (4x), since the 
+        #   output of a cell is the _concatenation_ of all intermediate nodes of this cell (4 in our experiments)
+        print(f"#Channels input 0: {C_prev_prev} | #Channels input 1: {C_prev} | #Channels for operations (target): {C}")
 
         if reduction_prev:
             self.preprocess0 = FactorizedReduce(C_prev_prev, C)

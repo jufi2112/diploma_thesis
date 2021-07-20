@@ -386,7 +386,7 @@ def gaussian_process_search(args):
                         torch.set_rng_state(gp_rng)
                         logging.info(f"Encountered the following exception during search: {e}")
                         gp_start_time = timer()
-                        if search_phase_identifier in details['search'].keys() and details['search'][search_phase_identifier] is not None and issubclass(details['search'][search_phase_identifier], Exception):
+                        if search_phase_identifier in details['search'].keys() and details['search'][search_phase_identifier] is not None and issubclass(details['search'][search_phase_identifier].__class__, Exception):
                             logging.info(f"Search for the given learning rate failed 2 times, removing this pair from the priors...")
                             learning_rates = torch.cat((learning_rates[:lr_index], learning_rates[lr_index+1:]), dim=0)
                         else:
@@ -448,15 +448,18 @@ def gaussian_process_search(args):
                     logging.info(f"Validation error: {val_err[0].item()}")
 
                 except Exception as e:
-                    torch.set_rng_state(gp_rng)
-                    logging.info(f"Encountered the following exception during evaluation: {e}")
-                    gp_start_time = timer()
-                    if eval_phase_identifier in details['evaluation'].keys() and details['evaluation'][eval_phase_identifier] is not None and issubclass(details['evaluation'][eval_phase_identifier], Exception):
-                        logging.info(f"Evaluation phase for the given learning rate failed 2 times, removing this pair from the priors...")
-                        learning_rates = torch.cat((learning_rates[:lr_index], learning_rates[lr_index+1:]), dim=0)
-                    else:
-                        details['evaluation'][eval_phase_identifier] = e
-                    continue
+                    # atm, 100% of exceptions are caused by bugs of Taurus on which I don't have any influence and from where we can't recover
+                    # Therefore, directly stop execution. If you are working on a stable system, feel free to remove the following line and uncomment the exception handling
+                    raise e
+                    # torch.set_rng_state(gp_rng)
+                    # logging.info(f"Encountered the following exception during evaluation: {e}")
+                    # gp_start_time = timer()
+                    # if eval_phase_identifier in details['evaluation'].keys() and details['evaluation'][eval_phase_identifier] is not None and issubclass(details['evaluation'][eval_phase_identifier].__class__, Exception):
+                    #     logging.info(f"Evaluation phase for the given learning rate failed 2 times, removing this pair from the priors...")
+                    #     learning_rates = torch.cat((learning_rates[:lr_index], learning_rates[lr_index+1:]), dim=0)
+                    # else:
+                    #     details['evaluation'][eval_phase_identifier] = e
+                    # continue
                     
                 valid_errors = val_err if valid_errors is None else torch.cat((valid_errors, val_err), dim=0)
 
