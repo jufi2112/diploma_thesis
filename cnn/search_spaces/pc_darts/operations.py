@@ -128,7 +128,7 @@ class Zero(nn.Module):
 
 
 class FactorizedReduce(nn.Module):
-    """Reduces the spational dimensionality of the input 
+    """
 
     Args:
         C_in (int): Number of input channels.
@@ -139,6 +139,10 @@ class FactorizedReduce(nn.Module):
     def __init__(self, C_in, C_out, affine=True):
         super(FactorizedReduce, self).__init__()
         assert C_out % 2 == 0, f"Expected number of output channels to be even, but got {C_out}"
+
+        # Possible workaround lifting restriction C_out % 2 == 0: C_outs = [C_out // 2, C_out - C_out // 2]
+        # use C_outs[0] in conv_1 and C_outs[1] in conv_2
+        # See FactorizedReduce implementation in ...\AutoDL-Projects\lib\models\cell_operations.py
 
         self.relu = nn.ReLU(inplace=False)
         self.conv_1 = nn.Conv2d(C_in, C_out // 2, 1, stride=2, padding=0, bias=False)

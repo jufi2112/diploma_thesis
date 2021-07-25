@@ -23,6 +23,10 @@
 
     gp_seed: 0
 
+    # whether the validation errors that are used as target sould be standardized
+    # also changes num_restarts and raw_samples during acquisition function optimization
+    standardize_valid_errors: true
+
 hydra:
     run:
         dir: D:\\Users\\Julien\\Documents\\Diplom_Results\\experiments_da\\${method.name}

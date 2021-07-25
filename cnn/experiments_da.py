@@ -346,7 +346,7 @@ def gaussian_process_search(args):
                         logging.info(f"KeyError while trying to access the details of search performed with learning rates {search_phase_identifier}.")
                         search_results = None
                     logging.info("Search with the specified learning rate has already been performed. Skipping...")
-                elif search_phase_identifier in details['search'].keys() and details['search'][search_phase_identifier] is not None and not issubclass(details['search'][search_phase_identifier], Exception):
+                elif search_phase_identifier in details['search'].keys() and details['search'][search_phase_identifier] is not None and not issubclass(details['search'][search_phase_identifier].__class__, Exception):
                     search_results = details['search'][search_phase_identifier]
                     best_genotype = search_results['best_genotype']
                     logging.info("Search with the specified learning rate has already been performed. Skipping...")
@@ -493,8 +493,15 @@ def gaussian_process_search(args):
             iteration = valid_errors.shape[0] - number_random_samples
             logging.info(f"Starting iteration {iteration}.")
 
+            if args.method.standardize_valid_errors:
+                valid_errors_input = standardize(valid_errors)
+                logging.info("Standardizing validation errors")
+            else:
+                valid_errors_input = valid_errors
+                logging.info("No standardization applied to validation errors")
+
             # Create GP
-            gp = SingleTaskGP(learning_rates, valid_errors)
+            gp = SingleTaskGP(learning_rates, valid_errors_input)
             mll = ExactMarginalLogLikelihood(gp.likelihood, gp)
             fit_gpytorch_model(mll)
 
@@ -528,13 +535,20 @@ def gaussian_process_search(args):
                 bounds = torch.cat((bounds, bounds_alpha_beta), dim=1)
             assert learning_rates.shape[1] == bounds.shape[1], "Shapes of learning_rates and bounds do not match"
 
+            if args.method.standardize_valid_errors:
+                num_restarts=15
+                raw_samples = 256
+            else:
+                num_restarts = 5,
+                raw_samples = 20
+
             # Optimize acquisition function
             candidate, acq_value = optimize_acqf(
                 EI,
                 bounds=bounds,
                 q=1,
-                num_restarts=5,
-                raw_samples=20
+                num_restarts=num_restarts,
+                raw_samples=raw_samples
             )
 
             # TODO: maybe determine based on acq_value if process should be continued.
