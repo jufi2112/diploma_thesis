@@ -152,6 +152,9 @@ def main(args):
 
         logging.info(f"Gaussian Process search finished with the following reason: {reason}")
         logging.info(f"After a search time of {timedelta(seconds=runtime)}, the GP came up with the following incumbent: {incumbent}")
+        if issubclass(reason.__class__, Exception):
+            logging.info(f"Detailed error log:")
+            raise reason
 
     else:
         raise ValueError("Unrecognized method.")
