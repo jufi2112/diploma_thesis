@@ -539,10 +539,10 @@ def gaussian_process_search(args):
             assert learning_rates.shape[1] == bounds.shape[1], "Shapes of learning_rates and bounds do not match"
 
             if args.method.standardize_valid_errors:
-                num_restarts=15
+                num_restarts = 15
                 raw_samples = 256
             else:
-                num_restarts = 5,
+                num_restarts = 5
                 raw_samples = 20
 
             # Optimize acquisition function
