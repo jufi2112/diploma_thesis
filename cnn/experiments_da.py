@@ -643,7 +643,7 @@ def grid_search(args):
 
         # try to load previous grid search checkpoints (search phase and, if needed, evaluation phase)
         try:
-            search_history, previous_runtime_search_phase = train_utils.load_outer_loop_checkpoint(base_dir_search)
+            search_history, previous_runtime_search_phase = train_utils.load_gs_outer_loop_checkpoint(base_dir_search)
             overall_runtime_search_phase += previous_runtime_search_phase
             logging.info(f"Resumed previous grid search search phase checkpoint which already ran for {timedelta(seconds=previous_runtime_search_phase)} hh:mm:ss.")
         except Exception as e:
@@ -653,7 +653,7 @@ def grid_search(args):
 
         if args.method.mode == "sequential":
             try:
-                eval_history, previous_runtime_eval_phase = train_utils.load_outer_loop_checkpoint(base_dir_eval)
+                eval_history, previous_runtime_eval_phase = train_utils.load_gs_outer_loop_checkpoint(base_dir_eval)
                 overall_runtime_eval_phase += previous_runtime_eval_phase
                 logging.info(f"Resumed previous grid search evaluation phase checkpoint which already ran for {timedelta(seconds=previous_runtime_eval_phase)} hh:mm:ss.")
             except Exception as e:
@@ -698,13 +698,13 @@ def grid_search(args):
                                 'search_error': e
                             }
                     # save checkpoint
-                    train_utils.save_outer_loop_checkpoint(
+                    train_utils.save_gs_outer_loop_checkpoint(
                         base_dir_search,
                         search_history,
                         overall_runtime_search_phase
                     )
                     if eval_history is not None:
-                        train_utils.save_outer_loop_checkpoint(
+                        train_utils.save_gs_outer_loop_checkpoint(
                             base_dir_eval,
                             eval_history,
                             overall_runtime_eval_phase
@@ -726,7 +726,7 @@ def grid_search(args):
                 }
 
                 # save checkpoint
-                train_utils.save_outer_loop_checkpoint(
+                train_utils.save_gs_outer_loop_checkpoint(
                     base_dir_search,
                     search_history,
                     overall_runtime_search_phase
@@ -735,7 +735,7 @@ def grid_search(args):
             if args.method.mode == "search_only":
                 continue
 
-            raise ValueError("This code is not supported anymore and will be deleted")
+            raise ValueError("This code is not supported anymore and 'will be deleted' (tm)")
             # evaluate the obtained genotype
             if current_init_channels in eval_history.keys():
                 logging.info(f"init_channels={current_init_channels} already in evaluation history. Skipping...")
@@ -811,7 +811,7 @@ def grid_search(args):
         args.train = args.train_eval_phase
         # try to load previous checkpoint of evaluation history
         try:
-            eval_history, runtime_eval = train_utils.load_outer_loop_checkpoint(base_dir_eval)
+            eval_history, runtime_eval = train_utils.load_gs_outer_loop_checkpoint(base_dir_eval)
             overall_runtime_eval_phase += runtime_eval
             logging.info(f"Resumed previous grid search evaluation phase checkpoint which already ran for {timedelta(seconds=runtime_eval)} hh:mm:ss.")
         except Exception as e:
@@ -821,7 +821,7 @@ def grid_search(args):
 
         # try to load search history that should get evaluated
         try:
-            search_history, runtime_search = train_utils.load_outer_loop_checkpoint(base_dir_search)
+            search_history, runtime_search = train_utils.load_gs_outer_loop_checkpoint(base_dir_search)
             overall_runtime_search_phase += runtime_search
             logging.info(f"Successfully loaded search history to evaluate.")
         except Exception as e:
@@ -850,7 +850,7 @@ def grid_search(args):
                     'search_error': search_history[current_init_channels]['error']
                 }
                 # save checkpoint
-                train_utils.save_outer_loop_checkpoint(
+                train_utils.save_gs_outer_loop_checkpoint(
                     base_dir_eval,
                     eval_history,
                     overall_runtime_eval_phase
@@ -915,7 +915,7 @@ def grid_search(args):
                     'eval_error': e
                 }
                 # save checkpoint
-                train_utils.save_outer_loop_checkpoint(
+                train_utils.save_gs_outer_loop_checkpoint(
                     base_dir_eval,
                     eval_history,
                     overall_runtime_eval_phase
@@ -938,7 +938,7 @@ def grid_search(args):
             }
 
             # save checkpoint
-            train_utils.save_outer_loop_checkpoint(
+            train_utils.save_gs_outer_loop_checkpoint(
                 base_dir_eval,
                 eval_history,
                 overall_runtime_eval_phase

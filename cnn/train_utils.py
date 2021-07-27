@@ -866,8 +866,8 @@ def dict_to_genotype(genotype_dict: dict):
     return genotype
 
 
-def save_outer_loop_checkpoint(folder, history: dict, overall_runtime: float):
-    """Saves a checkpoint of the given outer loop history into the provided folder.
+def save_gs_outer_loop_checkpoint(folder, history: dict, overall_runtime: float):
+    """Saves a checkpoint of the given outer loop grid search history into the provided folder.
     Saving is done in an atomic way by first creating a .part file which is then
     renamed with os.replace().
 
@@ -888,7 +888,7 @@ def save_outer_loop_checkpoint(folder, history: dict, overall_runtime: float):
     os.replace(ckpt_part, ckpt)
 
 
-def load_outer_loop_checkpoint(folder):
+def load_gs_outer_loop_checkpoint(folder):
     """Loads the outer loop history checkpoint of the grid search from the provided folder.
 
     Args:
@@ -905,7 +905,7 @@ def load_outer_loop_checkpoint(folder):
 
 
 def load_gp_outer_loop_checkpoint(folder):
-    """Loads the outer loop checkpoint of the Gaussian Process from the provided folder
+    """Loads the outer loop checkpoint of the Gaussian process from the provided folder
     
     Args:
         folder(str): Path to the folder that contains the checkpoint
@@ -954,7 +954,7 @@ def save_gp_outer_loop_checkpoint(
     details,
     random_state,
     learning_rates_searched):
-    """Saves the outer loop checkpoint of the Gaussian Process.
+    """Saves the outer loop checkpoint of the Gaussian process search.
 
     Args:
         folder (str): Directory where the checkpoint should be saved to.

@@ -7,7 +7,7 @@
 #SBATCH --cpus-per-task=1
 #SBATCH --mem-per-cpu=4000M
 
-#SBATCH -J "exp_2_extended_a100_gp_seed_63_epochs_600"
+#SBATCH -J "exp_2_extended_std_a100_gp_seed_63_epochs_600"
 
 #SBATCH -A p_da_studenten
 #SBATCH --mail-user=julien.fischer@mailbox.tu-dresden.de
