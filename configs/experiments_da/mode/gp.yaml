@@ -32,7 +32,9 @@ hydra:
         dir: D:\\Users\\Julien\\Documents\\Diplom_Results\\experiments_da\\${method.name}
 
 train_search_phase:
+    # can get overwritten by the slurm script that starts the job
     init_channels: 40
 
 train_eval_phase:
+    # can get overwritten by the slurm script that starts the job
     init_channels: 36

@@ -1,32 +1,32 @@
 #!/bin/bash
-#SBATCH --partition=ml
-#SBATCH --time=120:00:00
+#SBATCH --partition=alpha
+#SBATCH --time=24:00:00
 #SBATCH --nodes=1
 #SBATCH --gres=gpu:6
 #SBATCH --ntasks-per-node=6
 #SBATCH --cpus-per-task=1
 #SBATCH --mem-per-cpu=4000M
 
-#SBATCH -J "exp_1_grid_search_evaluate_only_constant_channels_seed_2554_beegfs"
+#SBATCH -J "exp_2_extended_std_no_shuffle_a100_gp_seed_42_epochs_600"
 
 #SBATCH -A p_da_studenten
 #SBATCH --mail-user=julien.fischer@mailbox.tu-dresden.de
 #SBATCH --mail-type=BEGIN,END,FAIL
-#SBATCH -o /beegfs/global0/ws/s8732099-diploma_thesis/slurm_output/exp_1_data-shuffle_false/v100_grid_search_evaluate_only_constant_channels_seed_2554_normal.out
-#SBATCH -e /beegfs/global0/ws/s8732099-diploma_thesis/slurm_output/exp_1_data-shuffle_false/v100_grid_search_evaluate_only_constant_channels_seed_2554_error.out
+#SBATCH -o /beegfs/global0/ws/s8732099-diploma_thesis/slurm_output/exp_2_extended_std_no_shuffle/a100_gp_seed_42_epochs_600_normal.out
+#SBATCH -e /beegfs/global0/ws/s8732099-diploma_thesis/slurm_output/exp_2_extended_std_no_shuffle/a100_gp_seed_42_epochs_600_error.out
 
-module load modenv/ml
-module load torchvision/0.7.0-fosscuda-2019b-Python-3.7.4-PyTorch-1.6.0
-source /home/s8732099/.venv/gaea_exp1_ml/bin/activate
+module load modenv/hiera  GCCcore/8.3.0  Python/3.7.4
+source /home/s8732099/.venv/gaea_extended_alpha/bin/activate
 export PYTHONPATH=$PYTHONPATH:/beegfs/global0/ws/s8732099-diploma_thesis/git/diploma_thesis/AutoDL-Projects
 
-# setting hyperparameters for search is necessary because of hydra
 python /beegfs/global0/ws/s8732099-diploma_thesis/git/diploma_thesis/cnn/experiments_da.py \
-    mode=grid_search \
-    method.mode=evaluate_only \
-    method.use_search_channels_for_evaluation=false \
-    run_search_phase.seed=2554 \
-    run_eval_phase.seed=2554 \
+    mode=gp \
+    run_search_phase.seed=7 \
+    run_eval_phase.seed=8 \
+    search.single_level_shuffle=false \
+    train_search_phase.init_channels=24 \
+    method.gp_seed=42 \
+    method.extended_learning_rates=true \
     run_search_phase.data=/beegfs/global0/ws/s8732099-diploma_thesis/data \
     run_eval_phase.data=/beegfs/global0/ws/s8732099-diploma_thesis/data \
     run_search_phase.autodl=/beegfs/global0/ws/s8732099-diploma_thesis/git/diploma_thesis/AutoDL-Projects \
@@ -36,6 +36,8 @@ python /beegfs/global0/ws/s8732099-diploma_thesis/git/diploma_thesis/cnn/experim
     run_eval_phase.number_gpus=6 \
     train_search_phase.batch_size=256 \
     train_eval_phase.batch_size=128 \
-    hydra.run.dir=/beegfs/global0/ws/s8732099-diploma_thesis/experiments_da/exp_1_data-shuffle_false_constant_channels/v100/\${method.name}-batch_size_256
+    run_eval_phase.epochs=600 \
+    run_eval_phase.scheduler_epochs=600 \
+    hydra.run.dir=/beegfs/global0/ws/s8732099-diploma_thesis/experiments_da/exp_2_extended_std_no_shuffle/a100/\${method.name}-seed_\${method.gp_seed}-epochs_\${run_eval_phase.epochs}
 
 exit 0
