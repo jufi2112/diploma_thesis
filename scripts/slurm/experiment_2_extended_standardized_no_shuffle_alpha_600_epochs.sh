@@ -24,6 +24,7 @@ python /beegfs/global0/ws/s8732099-diploma_thesis/git/diploma_thesis/cnn/experim
     run_search_phase.seed=21 \
     run_eval_phase.seed=12 \
     search.single_level_shuffle=false \
+    train_search_phase.init_channels=24 \
     method.gp_seed=63 \
     method.extended_learning_rates=true \
     run_search_phase.data=/beegfs/global0/ws/s8732099-diploma_thesis/data \
