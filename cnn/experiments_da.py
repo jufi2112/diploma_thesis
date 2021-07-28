@@ -170,7 +170,7 @@ def gaussian_process_search(args):
         Exception: The reason why the gaussian process was stopped.
         dict: The incumbent.
         float: Runtime of the GP in seconds.
-        dict: Details of the search process.
+        dict: Details of the search and evaluation phases performed during the optimization process.
     """
     # experiment 1 (grid search) uses a different environment (PyTorch 1.6) 
     # which does not support botorch and gpytorch 
