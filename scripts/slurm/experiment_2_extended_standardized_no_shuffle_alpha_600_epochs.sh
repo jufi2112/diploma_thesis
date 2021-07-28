@@ -7,13 +7,13 @@
 #SBATCH --cpus-per-task=1
 #SBATCH --mem-per-cpu=4000M
 
-#SBATCH -J "exp_2_extended_std_a100_gp_seed_63_epochs_600"
+#SBATCH -J "exp_2_extended_std_no_shuffle_a100_gp_seed_63_epochs_600"
 
 #SBATCH -A p_da_studenten
 #SBATCH --mail-user=julien.fischer@mailbox.tu-dresden.de
 #SBATCH --mail-type=BEGIN,END,FAIL
-#SBATCH -o /beegfs/global0/ws/s8732099-diploma_thesis/slurm_output/exp_2_extended_std/a100_gp_seed_63_epochs_600_normal.out
-#SBATCH -e /beegfs/global0/ws/s8732099-diploma_thesis/slurm_output/exp_2_extended_std/a100_gp_seed_63_epochs_600_error.out
+#SBATCH -o /beegfs/global0/ws/s8732099-diploma_thesis/slurm_output/exp_2_extended_std_no_shuffle/a100_gp_seed_63_epochs_600_normal.out
+#SBATCH -e /beegfs/global0/ws/s8732099-diploma_thesis/slurm_output/exp_2_extended_std_no_shuffle/a100_gp_seed_63_epochs_600_error.out
 
 module load modenv/hiera  GCCcore/8.3.0  Python/3.7.4
 source /home/s8732099/.venv/gaea_extended_alpha/bin/activate
@@ -37,6 +37,6 @@ python /beegfs/global0/ws/s8732099-diploma_thesis/git/diploma_thesis/cnn/experim
     train_eval_phase.batch_size=128 \
     run_eval_phase.epochs=600 \
     run_eval_phase.scheduler_epochs=600 \
-    hydra.run.dir=/beegfs/global0/ws/s8732099-diploma_thesis/experiments_da/exp_2_extended_std/a100/\${method.name}-seed_\${method.gp_seed}-epochs_\${run_eval_phase.epochs}
+    hydra.run.dir=/beegfs/global0/ws/s8732099-diploma_thesis/experiments_da/exp_2_extended_std_no_shuffle/a100/\${method.name}-seed_\${method.gp_seed}-epochs_\${run_eval_phase.epochs}
 
 exit 0
