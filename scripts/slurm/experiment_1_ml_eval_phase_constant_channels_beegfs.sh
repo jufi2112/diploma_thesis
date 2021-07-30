@@ -25,6 +25,7 @@ python /beegfs/global0/ws/s8732099-diploma_thesis/git/diploma_thesis/cnn/experim
     mode=grid_search \
     method.mode=evaluate_only \
     method.use_search_channels_for_evaluation=false \
+    train_eval_phase.init_channels=36 \
     run_search_phase.seed=2554 \
     run_eval_phase.seed=2554 \
     run_search_phase.data=/beegfs/global0/ws/s8732099-diploma_thesis/data \
