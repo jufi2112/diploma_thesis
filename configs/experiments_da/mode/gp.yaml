@@ -33,7 +33,7 @@ hydra:
 
 train_search_phase:
     # can get overwritten by the slurm script that starts the job
-    init_channels: 40
+    init_channels: 24
 
 train_eval_phase:
     # can get overwritten by the slurm script that starts the job
