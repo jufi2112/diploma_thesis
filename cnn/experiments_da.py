@@ -831,7 +831,7 @@ def grid_search(args):
             return search_history, eval_history, overall_runtime_search_phase, overall_runtime_eval_phase
 
         # evaluation loop
-        for step, current_init_channels in enumerate(args.method.init_channels_to_check):#enumerate(search_history.keys()):
+        for step, current_init_channels in enumerate(args.method.init_channels_to_check):
             #logging.info(f"| Step {(step+1)} / {len(search_history.keys())} |")
             logging.info(f"| Step {(step+1)} / {len(args.method.init_channels_to_check)} |")
             # check if the desired init_channels value was already searched

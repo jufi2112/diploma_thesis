@@ -7,3 +7,8 @@
 hydra:
     run:
         dir: D:\\Users\\Julien\\Documents\\Diplom_Results\\experiments_da\\${method.name}
+
+train_eval_phase:
+    # can get overwritten by the slurm script that starts the job
+    # used for Psi_const
+    init_channels: 36
