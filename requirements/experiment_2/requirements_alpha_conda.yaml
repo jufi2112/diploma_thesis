@@ -21,5 +21,3 @@ dependencies:
     - gpytorch=1.4.2
     - botorch=0.4.0
     - pip
-    - pip:
-        - git+https://github.com/gbaydin/hypergradient-descent.git
