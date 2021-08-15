@@ -53,7 +53,7 @@ def main(args):
         for seed in utilized_seeds
     }
     
-    checkpoints_to_test = os.path.listdir(checkpoint_dir)
+    checkpoints_to_test = os.listdir(checkpoint_dir)
 
     for checkpoint in checkpoints_to_test:
         torch.cuda.empty_cache()
