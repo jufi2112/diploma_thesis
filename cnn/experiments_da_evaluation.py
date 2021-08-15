@@ -58,7 +58,7 @@ def main(args):
     for checkpoint in checkpoints_to_test:
         torch.cuda.empty_cache()
         logging.info(f"Checkpoint being tested: {checkpoint}")
-        seed = int(checkpoint.split('_')[6])
+        seed = int(checkpoint.split('_')[6].split('.')[0])
         zeta_eval = int(checkpoint.split('_')[4])
 
         # Load genotype
