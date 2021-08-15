@@ -21,8 +21,8 @@ export PYTHONPATH=$PYTHONPATH:/beegfs/global0/ws/s8732099-diploma_thesis/git/dip
 
 # setting hyperparameters for search is necessary because of hydra
 python /beegfs/global0/ws/s8732099-diploma_thesis/git/diploma_thesis/cnn/experiments_da_evaluation.py \
-    run.data=/beegfs/global0/ws/s8732099-diploma_thesis/data
-    run.checkpoint_path=/beegfs/global0/ws/s8732099-diploma_thesis/best_runs_to_test
+    run.data=/beegfs/global0/ws/s8732099-diploma_thesis/data \
+    run.checkpoint_path=/beegfs/global0/ws/s8732099-diploma_thesis/best_runs_to_test \
     hydra.run.dir=/beegfs/global0/ws/s8732099-diploma_thesis/experiments_da/test_performance/
 
 exit 0
