@@ -46,7 +46,7 @@ def main(args):
     genotype_dir = os.path.join(args.run.checkpoint_path, 'genotypes')
     checkpoint_dir = os.path.join(args.run.checkpoint_path, 'checkpoints')
 
-    utilized_seeds = [int(os.listdir(genotype_dir)[i].split('_')[2]) for i in len(os.listdir(genotype_dir))]
+    utilized_seeds = [int(os.listdir(genotype_dir)[i].split('_')[2]) for i in range(len(os.listdir(genotype_dir)))]
 
     genotypes = {
         seed: os.path.join(genotype_dir, f'genotype_seed_{seed}.json')
