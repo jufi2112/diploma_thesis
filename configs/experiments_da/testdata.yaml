@@ -3,6 +3,7 @@
     gpu: 0
     data: ???
     report_freq: 50
+    checkpoint_path: ???
 
 train:
     cutout: false
@@ -12,8 +13,6 @@ search:
     search_space: pcdarts
 
 architecture:
-    zeta_eval: ???
     layers: 20 # number of cells the final network should be composed of
     auxiliary: true
-    genotype: ???
-    checkpoint: ???
+    

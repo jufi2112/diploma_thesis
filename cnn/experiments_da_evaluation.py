@@ -11,6 +11,7 @@ import hydra
 import logging
 import json
 import sys
+import os
 
 from collections import namedtuple
 Genotype = namedtuple("Genotype", "normal normal_concat reduce reduce_concat")
@@ -42,44 +43,63 @@ def main(args):
         num_workers=0
     )
 
-    # Load genotype
-    if type(args.architecture.genotype) == str:
-        with open(args.architecture.genotype, 'r') as genotype_file:
+    genotype_dir = os.path.join(args.run.checkpoint_path, 'genotypes')
+    checkpoint_dir = os.path.join(args.run.checkpoint_path, 'checkpoints')
+
+    utilized_seeds = [int(os.listdir(genotype_dir)[i].split('_')[2]) for i in len(os.listdir(genotype_dir))]
+
+    genotypes = {
+        seed: os.path.join(genotype_dir, f'genotype_seed_{seed}.json')
+        for seed in utilized_seeds
+    }
+    
+    checkpoints_to_test = os.path.listdir(checkpoint_dir)
+
+    for checkpoint in checkpoints_to_test:
+        torch.cuda.empty_cache()
+        logging.info(f"Checkpoint being tested: {checkpoint}")
+        seed = int(checkpoint.split('_')[6])
+        zeta_eval = int(checkpoint.split('_')[4])
+
+        # Load genotype
+        with open(genotypes[seed], 'r') as genotype_file:
             genotype_dict = json.load(genotype_file)
-        args.architecture.genotype = train_utils.dict_to_genotype(genotype_dict)
+        genotype = train_utils.dict_to_genotype(genotype_dict)
 
-    model = NetworkCIFAR(
-        args.architecture.zeta_eval,
-        10,
-        args.architecture.layers,
-        args.architecture.auxiliary,
-        args.architecture.genotype
-    )
+        model = NetworkCIFAR(
+            zeta_eval,
+            10,
+            args.architecture.layers,
+            args.architecture.auxiliary,
+            genotype
+        )
 
-    model = model.cuda(args.run.gpu)
+        model = model.cuda(args.run.gpu)
 
-    # Load weights from checkpoint
-    if args.run.gpu is not None:
-        map_location = {'cuda:0': f'cuda:{args.run.gpu}'}
-    ckpt = torch.load(args.architecture.checkpoint) if args.run.gpu is None else torch.load(args.architecture.checkpoint, map_location=map_location)
-    model.load_states(ckpt['model'])
+        # Load weights from checkpoint
+        if args.run.gpu is not None:
+            map_location = {'cuda:0': f'cuda:{args.run.gpu}'}
+        ckpt = torch.load(os.path.join(checkpoint_dir, checkpoint)) if args.run.gpu is None else torch.load(os.path.join(checkpoint_dir, checkpoint), map_location=map_location)
+        model.load_states(ckpt['model'])
 
-    infer_timer = timer()
+        infer_timer = timer()
 
-    test_acc, test_obj, test_top5 = train_utils.infer(
-        test_queue,
-        model,
-        criterion,
-        args.run.report_freq
-    )
+        test_acc, test_obj, test_top5 = train_utils.infer(
+            test_queue,
+            model,
+            criterion,
+            args.run.report_freq
+        )
 
-    infer_finished = timer() - infer_timer
+        infer_finished = timer() - infer_timer
 
-    logging.info(f"Genotype: {args.architecture.genotype}")
-    logging.info(f"Test accuracy: {test_acc}")
-    logging.info(f"Test loss: {test_obj}")
-    logging.info(f"Test top5 accuracy: {test_top5}")
-    logging.info(f"Time needed for inference: {timedelta(seconds=infer_finished)}")
+        #logging.info(f"    Genotype: {args.architecture.genotype}")
+        logging.info(f"    Test accuracy: {test_acc}")
+        logging.info(f"    Test loss: {test_obj}")
+        logging.info(f"    Test top5 accuracy: {test_top5}")
+        logging.info(f"    Time needed for inference: {timedelta(seconds=infer_finished)}")
+
+        del model
 
     sys.exit(0)
 
